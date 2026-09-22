@@ -84,13 +84,28 @@ def _brand_label(brand: str) -> str:
     tenant and is deliberately kept out of ``BRANDS`` (which is parity-locked
     to DEEPLINK_SCHEMES + capabilities). Falls back to a title-cased name so
     entry-title formatting never KeyErrors."""
+    if brand == "audi_kr":
+        return "Audi Korea (myAudi)"
     return BRANDS.get(brand, brand.replace("_", " ").title())
+
+
+def _normalize_brand_selection(
+    brand: str, country: str = "us"
+) -> tuple[str, str, str]:
+    """Map UI-only regional aliases to runtime brand/country/unique-id keys."""
+    lower = brand.lower()
+    if lower == "audi_kr":
+        return "audi", "kr", "audi_kr"
+    if lower not in ("volkswagen_na", "audi_na"):
+        country = "us"
+    return brand, country, brand
 
 
 # ── Brand selector options with icons ────────────────────────────────────────
 # HA renders these as a visual select list (not a plain dropdown)
 _BRAND_OPTIONS: list[SelectOptionDict] = [
     SelectOptionDict(value="audi",          label="Audi (myAudi)"),
+    SelectOptionDict(value="audi_kr",       label="Audi Korea (myAudi)"),
     SelectOptionDict(value="volkswagen",    label="Volkswagen EU (WeConnect ID)"),
     # #1316 — VW Commercial Vehicles (Nutzfahrzeuge): separate EU-Data-Act realm.
     SelectOptionDict(value="volkswagen_commercial", label="Volkswagen Commercial Vehicles"),
@@ -806,12 +821,20 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            brand    = user_input[CONF_BRAND]
+            selected_brand = user_input[CONF_BRAND]
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
-            country  = user_input.get(CONF_COUNTRY, "us")
+            brand, country, unique_brand = _normalize_brand_selection(
+                selected_brand, user_input.get(CONF_COUNTRY, "us")
+            )
+            normalized_input = dict(user_input)
+            normalized_input[CONF_COUNTRY] = country
+            if country == "kr":
+                # KR OIDC discovery exposes no device_authorization_endpoint,
+                # so the durable-MBB QR/device-grant channel cannot be armed.
+                normalized_input["enable_mbb_commands"] = False
 
-            await self.async_set_unique_id(f"{brand}_{username}")
+            await self.async_set_unique_id(f"{unique_brand}_{username}")
             self._abort_if_unique_id_configured()
 
             from .cariad.exceptions import PorscheCaptchaRequiredError  # noqa: PLC0415
@@ -824,8 +847,10 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 self._pending_brand    = brand
                 self._pending_username = username
                 self._pending_password = password
-                self._pending_entry_data = self._build_entry_data(brand, username, password, user_input)
-                self._pending_user_input = dict(user_input)
+                self._pending_entry_data = self._build_entry_data(
+                    brand, username, password, normalized_input
+                )
+                self._pending_user_input = dict(normalized_input)
                 self._porsche_captcha_return = "email_password"
                 self._porsche_captcha_image    = err.captcha_image
                 self._porsche_captcha_state    = err.state
@@ -838,8 +863,10 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     self._pending_brand    = brand
                     self._pending_username = username
                     self._pending_password = password
-                    self._pending_entry_data = self._build_entry_data(brand, username, password, user_input)
-                    self._pending_user_input = dict(user_input)
+                    self._pending_entry_data = self._build_entry_data(
+                        brand, username, password, normalized_input
+                    )
+                    self._pending_user_input = dict(normalized_input)
                     return await self.async_step_mfa()
                 if err_str.startswith("porsche_login_wall"):
                     # #1337 — the login got past the password but hit a Porsche
@@ -862,7 +889,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 errors["base"] = _map_error(err_str)
             else:
                 portal_data = self._build_entry_data(
-                    brand, username, password, user_input,
+                    brand, username, password, normalized_input,
                 )
                 # b12 — VW/Audi + "enable MBB commands": the portal validated
                 # above (reads); now chain to the MBB QR so the finish creates a
@@ -873,15 +900,15 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 # maps ('audi'→'Audi'), so Audi is wire-viable. EXPERIMENTAL —
                 # only legacy Car-Net Audis (pre-MEB) and unverified end-to-end.
                 if (
-                    user_input.get("enable_mbb_commands")
+                    normalized_input.get("enable_mbb_commands")
                     and brand in ("volkswagen", "audi")
                 ):
                     self._pending_portal_data = portal_data
-                    self._pending_portal_title = f"{_brand_label(brand)} — {username}"
+                    self._pending_portal_title = f"{_brand_label(selected_brand)} — {username}"
                     self._dag_mbb = True
                     self._dag_mbb_command = True
                     self._dag_brand = brand
-                    self._dag_user_input = dict(user_input)
+                    self._dag_user_input = dict(normalized_input)
                     self._dag_request_task = None
                     self._dag_poll_task = None
                     self._dag_user_code = ""
@@ -897,7 +924,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 if _tok:  # v4.7.7 (#1337) — bridge a Porsche login token (no-captcha path)
                     portal_data = {**portal_data, "porsche_initial_tokens": _tok}
                 return self.async_create_entry(
-                    title=f"{_brand_label(brand)} — {username}",
+                    title=f"{_brand_label(selected_brand)} — {username}",
                     data=portal_data,
                 )
 
@@ -1976,13 +2003,14 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 # entry; here that decision used to be dropped, so a 2FA VW/Audi
                 # user who asked for commands got a read-only portal entry.
                 ui = self._pending_user_input
+                display_brand = ui.get(CONF_BRAND, self._pending_brand)
                 if (
                     ui.get("enable_mbb_commands")
                     and self._pending_brand in ("volkswagen", "audi")
                 ):
                     self._pending_portal_data = self._pending_entry_data
                     self._pending_portal_title = (
-                        f"{_brand_label(self._pending_brand)} — "
+                        f"{_brand_label(display_brand)} — "
                         f"{self._pending_username}"
                     )
                     self._dag_mbb = True
@@ -2002,7 +2030,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     self._dag_error = ""
                     return await self.async_step_browser_login_pending()
                 return self.async_create_entry(
-                    title=f"{_brand_label(self._pending_brand)} — {self._pending_username}",
+                    title=f"{_brand_label(display_brand)} — {self._pending_username}",
                     data=self._pending_entry_data,
                 )
 
@@ -2523,10 +2551,16 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
 
         if user_input is not None and entry is not None:
-            brand    = user_input[CONF_BRAND]
+            selected_brand = user_input[CONF_BRAND]
             username = user_input[CONF_USERNAME]
             password = user_input[CONF_PASSWORD]
-            country  = user_input.get(CONF_COUNTRY, "us")
+            brand, country, unique_brand = _normalize_brand_selection(
+                selected_brand, user_input.get(CONF_COUNTRY, "us")
+            )
+            normalized_input = dict(user_input)
+            normalized_input[CONF_COUNTRY] = country
+            if country == "kr":
+                normalized_input["enable_mbb_commands"] = False
 
             from .cariad.exceptions import PorscheCaptchaRequiredError  # noqa: PLC0415
 
@@ -2542,7 +2576,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 self._pending_brand    = brand
                 self._pending_username = username
                 self._pending_password = password
-                self._pending_user_input = dict(user_input)
+                self._pending_user_input = dict(normalized_input)
                 self._porsche_captcha_return = "reconfigure"
                 self._porsche_reconfigure_entry_id = entry.entry_id
                 self._porsche_captcha_attempts = 0
@@ -2568,7 +2602,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                     )
                 errors["base"] = _map_error(str(err))
             else:
-                new_unique_id = f"{brand}_{username}"
+                new_unique_id = f"{unique_brand}_{username}"
                 await self.async_set_unique_id(new_unique_id)
                 # v2.17.1 (#584) — abort ONLY if the account was changed to one
                 # that already has its own entry. Reconfiguring the SAME account
@@ -2580,7 +2614,9 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 if account_changed:
                     self._abort_if_unique_id_configured()
 
-                base = self._build_entry_data(brand, username, password, user_input)
+                base = self._build_entry_data(
+                    brand, username, password, normalized_input
+                )
                 # v2.17.2 — for the SAME account, MERGE so a credential update
                 # keeps everything the base builder doesn't own: the durable-MBB
                 # command channel, supplementary-portal creds, DAG tokens (the
@@ -2610,16 +2646,16 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 # Reconfigure with MBB on means "re-approve". Reconfigure already
                 # demands the password, so this is not a surprise step.
                 if (
-                    user_input.get("enable_mbb_commands")
+                    normalized_input.get("enable_mbb_commands")
                     and brand in ("volkswagen", "audi")
                 ):
                     self._mbb_reconfigure_entry_id = entry.entry_id
                     self._pending_portal_data = merged
-                    self._pending_portal_title = f"{_brand_label(brand)} — {username}"
+                    self._pending_portal_title = f"{_brand_label(selected_brand)} — {username}"
                     self._dag_mbb = True
                     self._dag_mbb_command = True
                     self._dag_brand = brand
-                    self._dag_user_input = dict(user_input)
+                    self._dag_user_input = dict(normalized_input)
                     self._dag_request_task = None
                     self._dag_poll_task = None
                     self._dag_user_code = ""
@@ -2635,7 +2671,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
 
                 self.hass.config_entries.async_update_entry(
                     entry,
-                    title=f"{_brand_label(brand)} — {username}",
+                    title=f"{_brand_label(selected_brand)} — {username}",
                     unique_id=new_unique_id,
                     data=merged,
                 )
@@ -2644,10 +2680,17 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 return self.async_abort(reason="reconfigure_successful")
 
         current = entry.data if entry else {}
+        current_brand = current.get(CONF_BRAND, "")
+        current_country = current.get(CONF_COUNTRY, "us")
+        display_brand = (
+            "audi_kr"
+            if current_brand == "audi" and current_country == "kr"
+            else current_brand
+        )
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=_credentials_schema(
-                brand=current.get(CONF_BRAND, ""),
+                brand=display_brand,
                 username=current.get(CONF_USERNAME, ""),
                 scan_interval=current.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
                 spin=current.get(CONF_SPIN, ""),
@@ -2661,7 +2704,7 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
                 # stored key is CONF_MBB_COMMAND_CHANNEL — they are not the same
                 # string, which is how this stayed invisible.
                 enable_mbb_commands=bool(current.get(CONF_MBB_COMMAND_CHANNEL, False)),
-                country=current.get(CONF_COUNTRY, "us"),
+                country=current_country,
             ),
             errors=errors,
         )
@@ -2697,10 +2740,16 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         # It is harmless downstream — the EU Data Act portal builds its OIDC
         # state from its own country/language defaults ("de__de__BRAND"), not
         # from CONF_COUNTRY — but it is misleading in diagnostics and a latent
-        # trap. So we only persist it for volkswagen_na; every other brand
-        # leaves it unset (the coordinator/factory already default to "us"
-        # for the VW-NA path that is the only consumer).
-        if brand.lower() == "volkswagen_na":
+        # trap. So we persist it only where region selection is meaningful:
+        # volkswagen_na (US/CA) and Audi KR (APAC). Other EU brands leave it
+        # unset; the coordinator/factory default remains "us" where required.
+        if (
+            brand.lower() == "volkswagen_na"
+            or (
+                brand.lower() == "audi"
+                and user_input.get(CONF_COUNTRY, "").lower() == "kr"
+            )
+        ):
             data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")
         return data
 
