@@ -380,11 +380,19 @@ class CariadBaseClient:
             # data.
             strategies = [("data_act_portal", {})]
         elif self._brand.name == "audi":
-            strategies = [
-                ("idk", {"hybrid_full": False}),
-                ("idk", {"hybrid_full": True}),
-                ("data_act_portal", {}),
-            ]
+            # The EU Data Act portal is an EMEA-only fallback. Regional Audi
+            # clients (currently KR/APAC) must stay on their native IDK/BFF.
+            if self._brand.api_base.rstrip("/") == "https://emea.bff.cariad.digital":
+                strategies = [
+                    ("idk", {"hybrid_full": False}),
+                    ("idk", {"hybrid_full": True}),
+                    ("data_act_portal", {}),
+                ]
+            else:
+                strategies = [
+                    ("idk", {"hybrid_full": False}),
+                    ("idk", {"hybrid_full": True}),
+                ]
         elif self._brand.name in ("skoda", "seat", "cupra", "bentley"):
             strategies = [
                 ("idk", {"hybrid_full": False}),

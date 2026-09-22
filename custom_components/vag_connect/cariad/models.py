@@ -148,6 +148,25 @@ BRAND_AUDI = BrandConfig(
     android_package_name="de.myaudi.mobile.assistant",
 )
 
+# Audi South Korea (myAudi KR) — live KR market configuration.
+# Keep name="audi": downstream capability/command/qmauth logic is keyed to the
+# semantic Audi brand. Region selection is carried separately as country="kr".
+BRAND_AUDI_KR = BrandConfig(
+    name="audi",
+    client_id="2d185de9-3b31-46b8-b9e2-9624281755d2@apps_vw-dilab_com",
+    redirect_uri="myaudi:///",
+    user_agent=(
+        "Android/5.6.0 (Build 800344256.root project "
+        "'myaudi_android'.ext.buildTime) Android/13"
+    ),
+    api_base="https://ap.bff.cariad.digital",
+    scope=(
+        "address profile badge birthdate birthplace nationalIdentifier nationality "
+        "profession email vin phone nickname name picture mbb gallery openid"
+    ),
+    android_package_name="de.myaudi.mobile.assistant",
+)
+
 # v2.18.2 — Audi North America (myAudi US / CA). LIVE-VERIFIED from the US market
 # config (content.app.my.audi.com/service/mobileapp/configurations/market/US/en)
 # + the NA OIDC discovery doc, cross-checked against the DE control. Key finding:

@@ -1406,7 +1406,7 @@ class IDKAuth:
             # after the first call per process. Ensures long-running HA
             # instances pick up Audi CDN updates over their lifetime, not
             # only at initial login.
-            if self._brand.name == "audi":
+            if self._brand.name == "audi" and not self._token_url_override:
                 try:
                     from ._auth_config_resolver import (  # noqa: PLC0415
                         AuthConfigResolver,
@@ -1792,7 +1792,10 @@ class IDKAuth:
         # already returns. Throttled to once per hour per brand via
         # module-level cache so this adds zero extra latency on
         # repeated polls within the TTL window.
-        if self._brand.name in ("audi", "volkswagen"):
+        if (
+            self._brand.name in ("audi", "volkswagen")
+            and not self._token_url_override
+        ):
             try:
                 await resolver.refresh_via_discovery(self._session)
             except Exception:  # noqa: BLE001 — defense-in-depth
@@ -1802,13 +1805,15 @@ class IDKAuth:
         # call per HA process startup fetches the CDN, subsequent calls
         # within the TTL are a no-op. Only Audi brand actually fetches
         # (resolver.refresh_audi_market_config() returns {} for non-Audi).
-        if self._brand.name == "audi":
+        if self._brand.name == "audi" and not self._token_url_override:
             try:
                 await resolver.refresh_audi_market_config(self._session)
             except Exception:  # noqa: BLE001 — defense-in-depth
                 pass
         token_url = (
-            resolver.token_url()
+            self._get_token_endpoint()
+            if self._token_url_override
+            else resolver.token_url()
             if self._brand.name in ("audi", "volkswagen")
             else self._get_token_endpoint()
         )
@@ -1831,7 +1836,16 @@ class IDKAuth:
         # Total attempts capped at ~6 per call (3 client_ids × 2 qmauth
         # tuples). The first 200 short-circuits the rest.
         if self._brand.name in ("audi", "volkswagen"):
-            client_id_chain = resolver.oauth_client_id_chain()
+            if self._token_url_override:
+                # Regional endpoint override = explicit market binding. Do not
+                # prepend cached DE Audi client IDs or APK alternates.
+                client_id_chain = []
+                if self._user_client_id_override:
+                    client_id_chain.append(self._user_client_id_override)
+                if self._brand.client_id not in client_id_chain:
+                    client_id_chain.append(self._brand.client_id)
+            else:
+                client_id_chain = resolver.oauth_client_id_chain()
             qmauth_chain = resolver.qmauth_chain()
             attempts: list[tuple[str, str, str]] = [
                 (cid, qm_s, qm_c)
