@@ -42,6 +42,14 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Added
+- **Škoda: fuel level and oil-service distance over the Data Act portal (#1430, Vehicle Data Scout).**
+  Two Škoda EU-portal leaves the Scout surfaced — `fuelLevel` and `inspectionOilDistance` — now map
+  onto the existing fuel-level and oil-service-distance sensors, so a portal-read Škoda fills those
+  in instead of leaving them empty. (The VW `energy_contents.*.value_type` and `open` qualifiers stay
+  mapped-but-unpromoted by design — they gate other values rather than earning their own sensor.)
+
+
 ### Fixed
 - **A fresh reading next to a frozen one no longer triggers a false "data is N hours old" (#1431,
   thanks @Lagaff86).** The EU Data Act feed can ship a fresh block beside a frozen one, so a single
