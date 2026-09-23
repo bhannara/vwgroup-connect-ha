@@ -51,6 +51,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 
 ### Changed
+- **Brand-support docs corrected (#464, #1432).** Bentley is marked untested (offered on the Audi
+  tenant but never logged in), a 2026-09 report of Canada VW sign-in hitting device attestation is
+  noted, and the FAQ brand table now matches the README (SEAT/CUPRA shown as read-only with commands
+  blocked).
 - **A failed MBB command now logs the commanded service's own licence (#584).** The command log
   showed the shared subscription licence but not the per-service one, so a charge or climate command
   that failed on an expired `rbatterycharge_v1` / `rclima_v1` licence looked identical to any other
