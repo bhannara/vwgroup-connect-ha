@@ -1507,6 +1507,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             cached = None
         if cached and isinstance(cached.get("vehicles"), dict):
+            _restored_vins: list[str] = []
             with self._vehicles_lock:
                 for vin, vdata in cached["vehicles"].items():
                     if vin == "_meta" or vin in self.vehicles:
@@ -1516,6 +1517,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         restored["_restored"] = True
                         restored["_poll_failed"] = False
                         self.vehicles[vin] = restored
+                        _restored_vins.append(vin)
+            # #6 — seed the last-known-good time from the snapshot's own save
+            # time so the availability gate tolerates a first failed poll after
+            # a restart instead of blanking every entity, even though a valid
+            # cached snapshot is loaded (entity_base requires last_good).
+            self._seed_last_good_from_snapshot(cached.get("saved_at"), _restored_vins)
             _LOGGER.debug(
                 "VW Group Connect portal-safety: restored %d cached vehicle(s) "
                 "for %s", len(self.vehicles), brand,
@@ -5133,6 +5140,29 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 "Skipping %d disabled vehicle(s) this poll", len(vins) - len(active)
             )
         return active
+
+    def _seed_last_good_from_snapshot(
+        self, saved_at_raw: Any, vins: list[str]
+    ) -> None:
+        """Seed ``vehicle_last_good_at`` for restored VINs from the snapshot's
+        own save time. Without it a restored vehicle carries no last-known-good
+        timestamp, so the first failed poll after a restart drops every entity
+        to unavailable even though a valid cached snapshot is loaded
+        (``entity_base`` availability requires ``last_good``). ``setdefault`` so
+        a live value already present this session is never overwritten; a
+        missing or malformed ``saved_at`` is a no-op."""
+        if not hasattr(self, "vehicle_last_good_at") or self.vehicle_last_good_at is None:
+            self.vehicle_last_good_at = {}
+        if not isinstance(saved_at_raw, str):
+            return
+        try:
+            dt = datetime.fromisoformat(saved_at_raw)
+        except ValueError:
+            return
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        for vin in vins:
+            self.vehicle_last_good_at.setdefault(vin, dt)
 
     # ── Capabilities & feature-state plumbing (Session 2A foundation) ──────
 

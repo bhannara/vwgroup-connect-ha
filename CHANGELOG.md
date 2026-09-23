@@ -43,6 +43,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Entities survive a restart even when the first poll fails (portal-safety cache).** On startup the
+  integration restores the last-known-good snapshot, but it did not carry the "last good" timestamp
+  with it, so a single failed first poll after a restart dropped every entity to unavailable although
+  a valid snapshot was loaded. The restore now seeds that timestamp from the snapshot's own save time.
 - **Departure timers stay off combustion cars (#1316, from EcksteinU's diagnostics).** The three
   Škoda departure-timer time sensors and their "enabled" binary_sensors were the last timer entities
   without the electric-only gate their VW-EU twins already carry, so a diesel or petrol car could
