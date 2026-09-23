@@ -2034,7 +2034,7 @@ def map_dataset_to_vehicle_data(
     ))
     has_fuel = (
         first("fuel_level_current_level", "tank_current_level",
-              "fuelLevel_pct", "fuel_level") is not None
+              "fuelLevel_pct", "fuel_level", "fuelLevel") is not None
     )
     _ELECTRIC_TOKENS = ("ELECTRIC",)
     _COMBUSTION_TOKENS = ("PETROL", "GASOLINE", "DIESEL", "_GAS", "CNG", "LPG")
@@ -2276,8 +2276,10 @@ def map_dataset_to_vehicle_data(
     # (B3) to avoid mislabelling a PHEV's ICE range as electric.
     # v2.15.3 — tank_current_level is the EU-portal dialect name for the fuel
     # percent (distinct from fuel_level_current_level already tried first).
+    # Scout #1430 (Škoda Octavia) — ``fuelLevel`` is the Škoda EU-portal leaf for
+    # the tank percent, alongside the VW/portal dialect names already tried.
     fuel = _to_int(first("fuel_level_current_level", "tank_current_level",
-                         "fuelLevel_pct", "fuel_level"))
+                         "fuelLevel_pct", "fuel_level", "fuelLevel"))
     if fuel is not None:
         d.fuel_level = fuel
 
@@ -2483,7 +2485,10 @@ def map_dataset_to_vehicle_data(
         # native_value converts int→``date.today()+N`` (local midnight).
         if d.service_due_at is None:
             d.service_due_at = _svc(svc_days)
-    oil_km = _to_int(first("maintenance_interval_distance_until_oil_change"))
+    # Scout #1430 (Škoda Octavia) — ``inspectionOilDistance`` is the Škoda
+    # EU-portal leaf for the distance until the next oil service.
+    oil_km = _to_int(first("maintenance_interval_distance_until_oil_change",
+                           "inspectionOilDistance"))
     if oil_km is not None and d.oil_service_km is None:
         d.oil_service_km = _svc(oil_km)
     oil_days = _to_int(first("maintenance_interval__time_until_oil_change"))

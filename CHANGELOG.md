@@ -42,6 +42,61 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.14] - 2026-09-23 — The reads a 403 used to hide, and a login that skips the login page
+
+### Added
+- **Škoda: fuel level and oil-service distance over the Data Act portal (#1430, Vehicle Data Scout).**
+  Two Škoda EU-portal leaves the Scout surfaced — `fuelLevel` and `inspectionOilDistance` — now map
+  onto the existing fuel-level and oil-service-distance sensors, so a portal-read Škoda fills those
+  in instead of leaving them empty. (The VW `energy_contents.*.value_type` and `open` qualifiers stay
+  mapped-but-unpromoted by design — they gate other values rather than earning their own sensor.)
+
+
+### Changed
+- **Repo hygiene.** Two module headers that still read "Apache License 2.0" now match their own AGPL
+  SPDX line and the rest of the tree; the release action is pinned to a commit SHA; the prerelease
+  detection recognises any beta/rc tag regardless of patch number (a `vX.Y.14b1` no longer publishes
+  as a full release); and SECURITY.md's supported-versions table is current.
+- **Brand-support docs corrected (#464, #1432).** Bentley is marked untested (offered on the Audi
+  tenant but never logged in), a 2026-09 report of Canada VW sign-in hitting device attestation is
+  noted, and the FAQ brand table now matches the README (SEAT/CUPRA shown as read-only with commands
+  blocked).
+- **A failed MBB command now logs the commanded service's own licence (#584).** The command log
+  showed the shared subscription licence but not the per-service one, so a charge or climate command
+  that failed on an expired `rbatterycharge_v1` / `rclima_v1` licence looked identical to any other
+  refusal. The service's own licence status + expiry are now in the log.
+
+### Fixed
+- **A fresh reading next to a frozen one no longer triggers a false "data is N hours old" (#1431,
+  thanks @Lagaff86).** The EU Data Act feed can ship a fresh block beside a frozen one, so a single
+  poll may carry the older stamp; the staleness watchdog measured that stamp directly and raised a
+  repair (e.g. 166 h) even though the recorded snapshot was current (3.5 h). It now measures against
+  the freshest capture available, so the repair fires only when the data is genuinely frozen and
+  clears the moment a fresher reading lands.
+- **Diagnostics can name why a vw.de read was refused (#1313).** A walled core read recorded only the
+  HTTP status, so a plain dead-session 403 looked identical to a per-consent refusal. When the refusal
+  body carries a known CARIAD error code it is now decoded into the log and the diagnostics (e.g.
+  "403 (BFF 2101 userNotEnrolled)") — structured code only, never any body text.
+- **A charging wall on vw.de no longer hides the mileage (#1313, #923).** The charging and
+  maintenance reads shared a single guard, so when the charging endpoint returned 403/401 for a car,
+  the maintenance read — which carries the odometer — was skipped entirely; three reporters saw an
+  empty mileage as a result. Each read is now guarded on its own: a wall on one is recorded for
+  diagnostics and the other still runs, and the poll is only abandoned (and the session re-checked)
+  when nothing at all came back.
+- **Audi and VW browser login recovers when the login page is skipped (#1439, thanks @maki040).** With
+  a warm single-sign-on session the identity provider can jump straight to the app's own return
+  address instead of rendering the login page, and the HTTP client cannot follow that address — so the
+  attempt used to be thrown away and the login fell back to the portal strategy. The tokens carried in
+  that return address are now read directly, and the login completes.
+- **Entities survive a restart even when the first poll fails (portal-safety cache).** On startup the
+  integration restores the last-known-good snapshot, but it did not carry the "last good" timestamp
+  with it, so a single failed first poll after a restart dropped every entity to unavailable although
+  a valid snapshot was loaded. The restore now seeds that timestamp from the snapshot's own save time.
+- **Departure timers stay off combustion cars (#1316, from EcksteinU's diagnostics).** The three
+  Škoda departure-timer time sensors and their "enabled" binary_sensors were the last timer entities
+  without the electric-only gate their VW-EU twins already carry, so a diesel or petrol car could
+  spawn charging-departure timers that never apply to it. They now appear only on cars with a battery.
+
 ## [4.7.13] - 2026-09-17 — Three fixes the reporters' own captures found
 
 ### Fixed
