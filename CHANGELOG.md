@@ -42,6 +42,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **Departure timers stay off combustion cars (#1316, from EcksteinU's diagnostics).** The three
+  Škoda departure-timer time sensors and their "enabled" binary_sensors were the last timer entities
+  without the electric-only gate their VW-EU twins already carry, so a diesel or petrol car could
+  spawn charging-departure timers that never apply to it. They now appear only on cars with a battery.
+
 ## [4.7.13] - 2026-09-17 — Three fixes the reporters' own captures found
 
 ### Fixed
