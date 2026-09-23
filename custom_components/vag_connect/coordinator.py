@@ -4131,7 +4131,13 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # Lazy-initialise per-VIN tracking so tests bypassing __init__ work.
                 if not hasattr(self, "vehicle_success"):
                     self.vehicle_success = {}
-                vins = list(self.vehicles.keys())
+                # #1434 — this background hybrid_full loop is the actual periodic
+                # driver (update_interval is None; _async_update_data is not the
+                # periodic path here), so it needs its own _active_vins() filter.
+                # Without it, a vehicle the user disabled in HA keeps being polled
+                # forever by this loop even though _async_update_data() already
+                # skips it correctly.
+                vins = self._active_vins(list(self.vehicles.keys()))
                 # v2.20.0 — self-heal the durable-MBB command pre-test: re-warm
                 # the operationList each poll (12h client cache → cache-hit
                 # cheap) so a VIN whose setup warm transiently failed recovers on
@@ -4514,11 +4520,18 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # 1h. Brand-restricted to audi/volkswagen inside helper.
                 # Runs after vehicle update so newest VINs are present
                 # in self.vehicles when the parser merges back.
+                #
+                # #1434 — recomputed (not reusing the pre-merge `vins` from the
+                # top of this cycle) so a VIN discovered for the first time this
+                # very cycle is still covered, while a user-disabled VIN stays
+                # excluded from all nine best-effort refreshes below, not just
+                # the main get_status call.
+                active_vins = self._active_vins(list(self.vehicles.keys()))
                 try:
                     await asyncio.gather(
                         *[
                             self.refresh_trip_statistics(vin)
-                            for vin in self.vehicles
+                            for vin in active_vins
                         ],
                         return_exceptions=True,
                     )
@@ -4531,7 +4544,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     await asyncio.gather(
                         *[
                             self.refresh_charging_history(vin)
-                            for vin in self.vehicles
+                            for vin in active_vins
                         ],
                         return_exceptions=True,
                     )
@@ -4542,11 +4555,11 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # without the respective pay-in-app enrolment.
                 try:
                     await asyncio.gather(
-                        *[self.refresh_fueling(vin) for vin in self.vehicles],
-                        *[self.refresh_parking(vin) for vin in self.vehicles],
-                        *[self.refresh_predictive_maintenance(vin) for vin in self.vehicles],
-                        *[self.refresh_departure_timers(vin) for vin in self.vehicles],
-                        *[self.refresh_consents(vin) for vin in self.vehicles],
+                        *[self.refresh_fueling(vin) for vin in active_vins],
+                        *[self.refresh_parking(vin) for vin in active_vins],
+                        *[self.refresh_predictive_maintenance(vin) for vin in active_vins],
+                        *[self.refresh_departure_timers(vin) for vin in active_vins],
+                        *[self.refresh_consents(vin) for vin in active_vins],
                         return_exceptions=True,
                     )
                 except Exception:  # noqa: BLE001
@@ -4557,7 +4570,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     await asyncio.gather(
                         *[
                             self.refresh_charging_profiles(vin)
-                            for vin in self.vehicles
+                            for vin in active_vins
                         ],
                         return_exceptions=True,
                     )
@@ -4569,7 +4582,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     await asyncio.gather(
                         *[
                             self.refresh_battery_care(vin)
-                            for vin in self.vehicles
+                            for vin in active_vins
                         ],
                         return_exceptions=True,
                     )
@@ -5495,6 +5508,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         if not vins:
             with self._vehicles_lock:
                 vins = list(self.vehicles.keys())
+            # #1434 — called every cycle from both _poll_loop() and
+            # _async_update_data(); without this, a user-disabled vehicle's
+            # MBB operationList kept getting warmed even though it's supposed
+            # to stay fully quiet. _mbb_manual_vins (explicit opt-in list)
+            # deliberately bypasses this filter.
+            vins = self._active_vins(vins)
         for vin in vins:
             if not vin:
                 continue
@@ -7046,7 +7065,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             # gets retried (12 h client cache → cache-hit cheap). No-op for
             # non-MBB entries.
             await self._refresh_mbb_command_capabilities()
-            vins = list(self.vehicles.keys())
+            # #1434 — this manual-refresh path (triggered by
+            # async_request_refresh(), i.e. after every command against ANY
+            # vehicle on the account) was completely unfiltered: sending a
+            # command to one car re-polled every other car too, including
+            # ones the user disabled in HA.
+            vins = self._active_vins(list(self.vehicles.keys()))
             results = await asyncio.gather(
                 *[client.get_status(vin) for vin in vins],
                 return_exceptions=True,

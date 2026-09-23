@@ -42,6 +42,21 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Fixed
+- **A vehicle disabled in HA (sold, retired) stayed fully polled by three background paths
+  (#1434, thanks @skornehl).** `async_setup()`'s one-time prefetch already filtered its VIN
+  list through `_active_vins()`, but that isn't the periodic driver — `update_interval` is
+  `None`, so `_poll_loop()` is. It built its VIN list straight from `self.vehicles.keys()`
+  with no filtering, and so did every best-effort refresh inside it (trip stats, charging
+  history, fueling, parking, predictive maintenance, departure timers, consents, charging
+  profiles, battery care — nine calls total), `_async_update_data()` (the manual-refresh path
+  fired after every command against ANY vehicle on the account), and
+  `_refresh_mbb_command_capabilities()` (warms the MBB operationList, called from both loops).
+  All four now apply the same `_active_vins()` filter `async_setup()` already used, so a
+  user-disabled vehicle stays fully quiet — sending a command to your active car, or the
+  regular poll tick, no longer re-touches a car you disabled. History and entities are
+  untouched either way; only re-enabling the device resumes polling that VIN.
+
 ## [4.7.14] - 2026-09-23 — The reads a 403 used to hide, and a login that skips the login page
 
 ### Added
