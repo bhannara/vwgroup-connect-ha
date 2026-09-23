@@ -43,6 +43,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Audi and VW browser login recovers when the login page is skipped (#1439, thanks @maki040).** With
+  a warm single-sign-on session the identity provider can jump straight to the app's own return
+  address instead of rendering the login page, and the HTTP client cannot follow that address — so the
+  attempt used to be thrown away and the login fell back to the portal strategy. The tokens carried in
+  that return address are now read directly, and the login completes.
 - **Entities survive a restart even when the first poll fails (portal-safety cache).** On startup the
   integration restores the last-known-good snapshot, but it did not carry the "last good" timestamp
   with it, so a single failed first poll after a restart dropped every entity to unavailable although
