@@ -50,6 +50,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   mapped-but-unpromoted by design — they gate other values rather than earning their own sensor.)
 
 
+### Changed
+- **A failed MBB command now logs the commanded service's own licence (#584).** The command log
+  showed the shared subscription licence but not the per-service one, so a charge or climate command
+  that failed on an expired `rbatterycharge_v1` / `rclima_v1` licence looked identical to any other
+  refusal. The service's own licence status + expiry are now in the log.
+
 ### Fixed
 - **A fresh reading next to a frozen one no longer triggers a false "data is N hours old" (#1431,
   thanks @Lagaff86).** The EU Data Act feed can ship a fresh block beside a frozen one, so a single
