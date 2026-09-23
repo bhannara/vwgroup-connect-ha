@@ -52,6 +52,7 @@ from aiohttp import ClientError, ClientSession, ClientTimeout, TooManyRedirects
 
 from ..._canaries import CANARY_WEBSITE_AUTHPROXY
 from .._util import drop_charge_sentinel, drop_odometer_sentinel
+from .._bff_error_codes import decode_bff_error
 from ..exceptions import APIError, AuthenticationError
 from ..models import VehicleData
 from ._eu_data_act import _login_fields, _login_error, _resolve_action, _TC_MARKERS
@@ -206,8 +207,8 @@ def _http_status_from_exc(exc: BaseException) -> str:
     status is the one thing attributable to a walled core read without threading
     it back up the stack. Returns the digits, or ``"auth-fail"`` when absent — a
     value-safe probe key, never the raw message."""
-    m = re.search(r"HTTP (\d{3})", str(exc))
-    return m.group(1) if m else "auth-fail"
+    m = re.search(r"HTTP (\d{3})((?: \(BFF [^)]+\))?)", str(exc))
+    return (m.group(1) + m.group(2)) if m else "auth-fail"
 
 
 def _redacted_cookie_summary(cookies: list[dict[str, Any]]) -> str:
@@ -1475,8 +1476,25 @@ class WebsiteAuthProxyConnector:
                         if record_as:
                             self.probe_outcomes[record_as] = str(resp.status)
                         return None
+                    # #2 — decode a KNOWN BFF error code from the body so a
+                    # plain auth wall (dead session) is distinguishable from a
+                    # per-consent refusal (e.g. userNotEnrolled) in diagnostics +
+                    # the log. Structured code only (decode_bff_error never
+                    # returns free text), so nothing sensitive is surfaced.
+                    _detail = ""
+                    try:
+                        _decoded = decode_bff_error(
+                            await resp.text(errors="replace")
+                        )
+                    except Exception:  # noqa: BLE001
+                        _decoded = None
+                    if _decoded is not None:
+                        _detail = f" (BFF {_decoded[0]} {_decoded[1]})"
+                    if record_as:
+                        self.probe_outcomes[record_as] = f"{resp.status}{_detail}"
                     raise AuthenticationError(
-                        f"Website authproxy GET {_safe_url(url)} → HTTP {resp.status}"
+                        f"Website authproxy GET {_safe_url(url)} → HTTP "
+                        f"{resp.status}{_detail}"
                     )
                 if resp.status >= 400:
                     if (

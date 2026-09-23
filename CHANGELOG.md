@@ -43,6 +43,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **Diagnostics can name why a vw.de read was refused (#1313).** A walled core read recorded only the
+  HTTP status, so a plain dead-session 403 looked identical to a per-consent refusal. When the refusal
+  body carries a known CARIAD error code it is now decoded into the log and the diagnostics (e.g.
+  "403 (BFF 2101 userNotEnrolled)") — structured code only, never any body text.
 - **A charging wall on vw.de no longer hides the mileage (#1313, #923).** The charging and
   maintenance reads shared a single guard, so when the charging endpoint returned 403/401 for a car,
   the maintenance read — which carries the odometer — was skipped entirely; three reporters saw an
