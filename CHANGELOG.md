@@ -42,6 +42,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [4.7.14] - 2026-09-23 — The reads a 403 used to hide, and a login that skips the login page
+
 ### Added
 - **Škoda: fuel level and oil-service distance over the Data Act portal (#1430, Vehicle Data Scout).**
   Two Škoda EU-portal leaves the Scout surfaced — `fuelLevel` and `inspectionOilDistance` — now map
