@@ -1985,27 +1985,54 @@ class WebsiteAuthProxyConnector:
                 build_maintenance_url,
             )
 
+            # #1 — charging (realm vwag-weconnect) and maintenance (realm vw-de)
+            # each get their OWN auth-wall guard. A 403 on one realm is not proven
+            # to be a dead session and must NOT skip the other read: before this,
+            # a charging 403 aborted the whole block, so maintenance — and the
+            # mileage it carries — never ran on three separate cars (#1313, #923).
+            # Record each wall for diagnostics and continue; the decision at the
+            # end re-raises only when nothing at all came back.
             _core_read = "charging"
-            charging = await self._get_json(
-                build_charging_url(vin, self._gdc(vin)),
-                accept="*/*",
-                soft=True,
-                record_as="vwde_charging",  # v4.7.11 (#1313) — status-only, lands in diagnostics
-            )
-            if isinstance(charging, dict):
-                map_charging_to_vehicle_data(charging, d)
-                got_data = True
+            try:
+                charging = await self._get_json(
+                    build_charging_url(vin, self._gdc(vin)),
+                    accept="*/*",
+                    soft=True,
+                    record_as="vwde_charging",
+                )
+                if isinstance(charging, dict):
+                    map_charging_to_vehicle_data(charging, d)
+                    got_data = True
+            except (AuthenticationError, APIError) as exc:
+                _core_exc = _core_exc or exc
+                self.probe_outcomes[f"vwde_core_read:{_core_read}"] = (
+                    _http_status_from_exc(exc)
+                )
+                _LOGGER.info(
+                    "vw.de core read '%s' walled for %s (%s); continuing to the "
+                    "next read (#1)", _core_read, vin[-6:], exc,
+                )
 
             _core_read = "maintenance"
-            maintenance = await self._get_json(
-                build_maintenance_url(vin, self._gdc(vin)),
-                accept="*/*",
-                soft=True,
-                record_as="vwde_maintenance",  # v4.7.11 (#1313) — status-only, lands in diagnostics
-            )
-            if isinstance(maintenance, dict):
-                map_maintenance_to_vehicle_data(maintenance, d)
-                got_data = True
+            try:
+                maintenance = await self._get_json(
+                    build_maintenance_url(vin, self._gdc(vin)),
+                    accept="*/*",
+                    soft=True,
+                    record_as="vwde_maintenance",
+                )
+                if isinstance(maintenance, dict):
+                    map_maintenance_to_vehicle_data(maintenance, d)
+                    got_data = True
+            except (AuthenticationError, APIError) as exc:
+                _core_exc = _core_exc or exc
+                self.probe_outcomes[f"vwde_core_read:{_core_read}"] = (
+                    _http_status_from_exc(exc)
+                )
+                _LOGGER.info(
+                    "vw.de core read '%s' walled for %s (%s); continuing (#1)",
+                    _core_read, vin[-6:], exc,
+                )
 
             # v2.16.0 — active dashboard warning-lights count (BETA, fail-soft).
             try:
@@ -2219,8 +2246,12 @@ class WebsiteAuthProxyConnector:
         #     car serves nothing at all): re-raise so the caller's refresh +
         #     retry runs exactly as before.
         if _core_exc is not None:
+            # #1 — also keep the snapshot when a live core read (e.g. maintenance
+            # after a charging wall) already produced data: the session is alive,
+            # so re-raising would throw that data away and force a needless
+            # refresh+retry.
             _tail_ok = bool(
-                d.image_urls or d.model or d.model_year
+                got_data or d.image_urls or d.model or d.model_year
                 or d.exterior_color or d.engine_power
             )
             if not _tail_ok:

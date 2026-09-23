@@ -43,6 +43,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **A charging wall on vw.de no longer hides the mileage (#1313, #923).** The charging and
+  maintenance reads shared a single guard, so when the charging endpoint returned 403/401 for a car,
+  the maintenance read — which carries the odometer — was skipped entirely; three reporters saw an
+  empty mileage as a result. Each read is now guarded on its own: a wall on one is recorded for
+  diagnostics and the other still runs, and the poll is only abandoned (and the session re-checked)
+  when nothing at all came back.
 - **Audi and VW browser login recovers when the login page is skipped (#1439, thanks @maki040).** With
   a warm single-sign-on session the identity provider can jump straight to the app's own return
   address instead of rendering the login page, and the HTTP client cannot follow that address — so the
