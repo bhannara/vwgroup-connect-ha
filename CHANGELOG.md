@@ -51,6 +51,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 
 ### Changed
+- **Repo hygiene.** Two module headers that still read "Apache License 2.0" now match their own AGPL
+  SPDX line and the rest of the tree; the release action is pinned to a commit SHA; the prerelease
+  detection recognises any beta/rc tag regardless of patch number (a `vX.Y.14b1` no longer publishes
+  as a full release); and SECURITY.md's supported-versions table is current.
 - **Brand-support docs corrected (#464, #1432).** Bentley is marked untested (offered on the Audi
   tenant but never logged in), a 2026-09 report of Canada VW sign-in hitting device attestation is
   noted, and the FAQ brand table now matches the README (SEAT/CUPRA shown as read-only with commands
