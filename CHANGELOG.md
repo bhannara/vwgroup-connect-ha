@@ -43,6 +43,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Fixed
+- **A fresh reading next to a frozen one no longer triggers a false "data is N hours old" (#1431,
+  thanks @Lagaff86).** The EU Data Act feed can ship a fresh block beside a frozen one, so a single
+  poll may carry the older stamp; the staleness watchdog measured that stamp directly and raised a
+  repair (e.g. 166 h) even though the recorded snapshot was current (3.5 h). It now measures against
+  the freshest capture available, so the repair fires only when the data is genuinely frozen and
+  clears the moment a fresher reading lands.
 - **Diagnostics can name why a vw.de read was refused (#1313).** A walled core read recorded only the
   HTTP status, so a plain dead-session 403 looked identical to a per-consent refusal. When the refusal
   body carries a known CARIAD error code it is now decoded into the log and the diagnostics (e.g.

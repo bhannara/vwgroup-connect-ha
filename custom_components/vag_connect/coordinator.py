@@ -6767,6 +6767,20 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
             _threshold_s = max(STALE_DATA_MIN_AGE_S, 8 * _interval_s)
             _age = _capture_age_s(data)
+            # #5 (#1431 Lagaff86) — the EU-DA portal ships a fresh data block
+            # next to a frozen one, so THIS poll's raw last_seen_at can be the
+            # OLDER contested stamp while a newer capture is already recorded.
+            # _enrich runs before reconcile in every flow, so self.vehicles still
+            # holds the previous (advance-only-held) snapshot: measure the age
+            # against the FRESHEST of this poll and that recorded value, so a
+            # stale stamp next to a fresh one does not fire a false "N hours old"
+            # repair. A genuinely fresher capture (smaller age) still wins and
+            # clears the repair; a genuinely frozen feed (both old) still flags.
+            _prev_snap = (getattr(self, "vehicles", None) or {}).get(_vin_sd)
+            if isinstance(_prev_snap, dict):
+                _prev_age = _capture_age_s(_prev_snap)
+                if _prev_age is not None and (_age is None or _prev_age < _age):
+                    _age = _prev_age
             # #465 — automatable twin of the stale-data Repair: a
             # device_class=PROBLEM binary the user can drive automations off,
             # from the SAME capture-age + threshold so the binary and the Repair
