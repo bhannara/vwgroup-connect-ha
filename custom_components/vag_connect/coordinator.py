@@ -1507,6 +1507,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         except Exception:  # noqa: BLE001
             cached = None
         if cached and isinstance(cached.get("vehicles"), dict):
+            _restored_vins: list[str] = []
             with self._vehicles_lock:
                 for vin, vdata in cached["vehicles"].items():
                     if vin == "_meta" or vin in self.vehicles:
@@ -1516,6 +1517,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         restored["_restored"] = True
                         restored["_poll_failed"] = False
                         self.vehicles[vin] = restored
+                        _restored_vins.append(vin)
+            # #6 — seed the last-known-good time from the snapshot's own save
+            # time so the availability gate tolerates a first failed poll after
+            # a restart instead of blanking every entity, even though a valid
+            # cached snapshot is loaded (entity_base requires last_good).
+            self._seed_last_good_from_snapshot(cached.get("saved_at"), _restored_vins)
             _LOGGER.debug(
                 "VW Group Connect portal-safety: restored %d cached vehicle(s) "
                 "for %s", len(self.vehicles), brand,
@@ -5147,6 +5154,29 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
         return active
 
+    def _seed_last_good_from_snapshot(
+        self, saved_at_raw: Any, vins: list[str]
+    ) -> None:
+        """Seed ``vehicle_last_good_at`` for restored VINs from the snapshot's
+        own save time. Without it a restored vehicle carries no last-known-good
+        timestamp, so the first failed poll after a restart drops every entity
+        to unavailable even though a valid cached snapshot is loaded
+        (``entity_base`` availability requires ``last_good``). ``setdefault`` so
+        a live value already present this session is never overwritten; a
+        missing or malformed ``saved_at`` is a no-op."""
+        if not hasattr(self, "vehicle_last_good_at") or self.vehicle_last_good_at is None:
+            self.vehicle_last_good_at = {}
+        if not isinstance(saved_at_raw, str):
+            return
+        try:
+            dt = datetime.fromisoformat(saved_at_raw)
+        except ValueError:
+            return
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        for vin in vins:
+            self.vehicle_last_good_at.setdefault(vin, dt)
+
     # ── Capabilities & feature-state plumbing (Session 2A foundation) ──────
 
     def get_feature_state(self, vin: str, command: str) -> FeatureState:
@@ -6756,6 +6786,20 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             )
             _threshold_s = max(STALE_DATA_MIN_AGE_S, 8 * _interval_s)
             _age = _capture_age_s(data)
+            # #5 (#1431 Lagaff86) — the EU-DA portal ships a fresh data block
+            # next to a frozen one, so THIS poll's raw last_seen_at can be the
+            # OLDER contested stamp while a newer capture is already recorded.
+            # _enrich runs before reconcile in every flow, so self.vehicles still
+            # holds the previous (advance-only-held) snapshot: measure the age
+            # against the FRESHEST of this poll and that recorded value, so a
+            # stale stamp next to a fresh one does not fire a false "N hours old"
+            # repair. A genuinely fresher capture (smaller age) still wins and
+            # clears the repair; a genuinely frozen feed (both old) still flags.
+            _prev_snap = (getattr(self, "vehicles", None) or {}).get(_vin_sd)
+            if isinstance(_prev_snap, dict):
+                _prev_age = _capture_age_s(_prev_snap)
+                if _prev_age is not None and (_age is None or _prev_age < _age):
+                    _age = _prev_age
             # #465 — automatable twin of the stale-data Repair: a
             # device_class=PROBLEM binary the user can drive automations off,
             # from the SAME capture-age + threshold so the binary and the Repair
