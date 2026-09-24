@@ -43,6 +43,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 ## [Unreleased]
 
 ### Changed
+- **A failed Data Act request-kickoff now records why (#1439, thanks @maki040).** When the portal
+  can't create a Custom Data Request (e.g. a 503 backend error, or a 4xx account rejection), the
+  reason is captured per VIN and surfaced in diagnostics as `data_act_kickoff_errors`, so it stays
+  visible during the re-POST backoff and after a restart — no debug logging needed.
 - **Repo hygiene.** Removed a shadowed duplicate departure-timer sensor block (a VW-EU twin that never
   spawned, because the Škoda block registers the same keys first); corrected the outdated
   "requirements: []" notes in dependabot.yml and quality_scale.yaml (there are three opt-in
