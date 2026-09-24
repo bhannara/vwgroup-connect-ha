@@ -24,6 +24,7 @@ _VIN = "WVWZZZAUZFW805377"
 def _stub(*, auto: bool) -> Any:
     stub = type("S", (), {})()
     stub._active_vins = lambda vins: vins  # #1434 pass-through (no disabled-filtering here)
+    stub._data_act_kickoff_error = {}  # #1439
     stub.entry = MagicMock()
     stub.entry.options = {"eu_data_act_auto_kickoff": auto, "data_act_identifiers": {}}
     stub.entry.data = {"brand": "volkswagen", "eu_data_act_auto_kickoff": auto}
@@ -65,6 +66,7 @@ def test_no_force_with_toggle_off_skips() -> None:
 def test_manual_button_forces_and_refreshes() -> None:
     stub = type("S", (), {})()
     stub._active_vins = lambda vins: vins  # #1434 pass-through (no disabled-filtering here)
+    stub._data_act_kickoff_error = {}  # #1439
     stub._ensure_data_act_custom_request_kickoff = AsyncMock()
     stub.async_request_refresh = AsyncMock()
     asyncio.run(VagConnectCoordinator.async_create_data_act_request(stub))
@@ -80,6 +82,7 @@ def test_runtime_kickoff_fires_on_fresh_boot() -> None:
     # kickoff (the 0.0-comparison bug). None sentinel → first call always runs.
     stub = type("S", (), {})()
     stub._active_vins = lambda vins: vins  # #1434 pass-through (no disabled-filtering here)
+    stub._data_act_kickoff_error = {}  # #1439
     stub._ensure_data_act_custom_request_kickoff = AsyncMock()
     with patch("time.monotonic", return_value=30.0):
         asyncio.run(VagConnectCoordinator._maybe_runtime_data_act_kickoff(stub))
@@ -90,6 +93,7 @@ def test_runtime_kickoff_fires_on_fresh_boot() -> None:
 def test_runtime_kickoff_rate_limited_after_first() -> None:
     stub = type("S", (), {})()
     stub._active_vins = lambda vins: vins  # #1434 pass-through (no disabled-filtering here)
+    stub._data_act_kickoff_error = {}  # #1439
     stub._ensure_data_act_custom_request_kickoff = AsyncMock()
     stub._last_runtime_kickoff = 1000.0
     # only 1 h later (< 6 h) → suppressed

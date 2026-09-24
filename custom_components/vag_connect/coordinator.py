@@ -1194,6 +1194,9 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         # exposed in diagnostics so users can see how stale the cached
         # state is.
         self.vehicle_last_good_at: dict[str, datetime] = {}
+        # #1439 — per-VIN last Data Act kickoff failure reason (HTTP status),
+        # surfaced in diagnostics so a portal 503/4xx stays visible during backoff.
+        self._data_act_kickoff_error: dict[str, str] = {}
 
         # v2.15.5 — ABRP (A Better Routeplanner) per-VIN last-successfully-
         # sent telemetry fingerprint. The "ABRP data changed" binary sensor
@@ -2359,6 +2362,14 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 new_ts[vin] = datetime.now(tz=timezone.utc).isoformat()
                 changed = True
                 new_id = await scraper.kickoff_custom_data_request(vin)
+                # #1439 — record why a kickoff made no request (portal HTTP
+                # status) so the reason survives the backoff window and shows in
+                # diagnostics without the user enabling debug logging.
+                _kst = getattr(scraper, "last_kickoff_status", None)
+                if _kst is not None:
+                    self._data_act_kickoff_error[vin] = f"HTTP {_kst}"
+                else:
+                    self._data_act_kickoff_error.pop(vin, None)
                 if new_id:
                     new_map[vin] = new_id
                     changed = True
