@@ -1071,27 +1071,6 @@ SENSOR_DESCRIPTIONS: tuple[VagSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
     ),
 
-    VagSensorDescription(
-        key="departure_timer_1_time",
-        translation_key="departure_timer_1_time",
-        data_key="departure_timer_1_time",
-        icon="mdi:clock-time-eight-outline",
-        condition="electric",
-    ),
-    VagSensorDescription(
-        key="departure_timer_2_time",
-        translation_key="departure_timer_2_time",
-        data_key="departure_timer_2_time",
-        icon="mdi:clock-time-eight-outline",
-        condition="electric",
-    ),
-    VagSensorDescription(
-        key="departure_timer_3_time",
-        translation_key="departure_timer_3_time",
-        data_key="departure_timer_3_time",
-        icon="mdi:clock-time-eight-outline",
-        condition="electric",
-    ),
 
     # ── AdBlue (Diesel) ──────────────────────────────────────────────────────
     VagSensorDescription(
