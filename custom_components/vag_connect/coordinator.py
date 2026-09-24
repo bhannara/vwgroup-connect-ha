@@ -2290,7 +2290,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         )
         new_ts = dict(kickoff_ts)
 
-        for vin in list(self.vehicles):
+        # #1434 (follow-up to skornehl's PR #1435) — this per-VIN portal kickoff
+        # is reachable from the periodic poll (_maybe_runtime_data_act_kickoff)
+        # and from _async_update_data, so a user-disabled vehicle would still get
+        # its Data Act request probed/kicked ~once/6h in portal mode. Filter it
+        # like every other periodic path so a disabled car stays fully quiet.
+        for vin in self._active_vins(list(self.vehicles)):
             try:
                 active = await scraper.get_active_custom_request_identifier(vin)
                 if active:

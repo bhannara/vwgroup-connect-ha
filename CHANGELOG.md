@@ -56,6 +56,10 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   user-disabled vehicle stays fully quiet — sending a command to your active car, or the
   regular poll tick, no longer re-touches a car you disabled. History and entities are
   untouched either way; only re-enabling the device resumes polling that VIN.
+- **…and the Data Act portal request-kickoff is filtered too (#1434 follow-up).** The one remaining
+  periodic path that still touched a user-disabled vehicle — the EU Data Act 15-minute request
+  probe/kickoff in portal mode (reachable from the poll loop and from the manual-refresh path) — now
+  applies the same `_active_vins()` filter, so a disabled car is genuinely fully quiet.
 
 ## [4.7.14] - 2026-09-23 — The reads a 403 used to hide, and a login that skips the login page
 
