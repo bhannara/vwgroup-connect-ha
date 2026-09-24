@@ -42,6 +42,13 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Changed
+- **Repo hygiene.** Removed a shadowed duplicate departure-timer sensor block (a VW-EU twin that never
+  spawned, because the Škoda block registers the same keys first); corrected the outdated
+  "requirements: []" notes in dependabot.yml and quality_scale.yaml (there are three opt-in
+  dependencies — firebase-messaging, aiomqtt, adb-shell — for the push and companion channels); and
+  raised the CI coverage floor from 65% to 75% (actual is 79%).
+
 ### Fixed
 - **A vehicle disabled in HA (sold, retired) stayed fully polled by three background paths
   (#1434, thanks @skornehl).** `async_setup()`'s one-time prefetch already filtered its VIN
