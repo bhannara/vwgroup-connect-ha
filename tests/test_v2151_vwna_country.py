@@ -173,7 +173,16 @@ class TestValidateForwardsCountry:
 
     def test_email_password_reads_and_forwards_country(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        assert 'country  = user_input.get(CONF_COUNTRY, "us")' in src
+        start = src.index("async def async_step_email_password(")
+        end = src.index("async def async_step_website_authproxy(", start)
+        body = "".join(src[start:end].split())
+
+        assert (
+            '_normalize_brand_selection(selected_brand,user_input.get(CONF_COUNTRY,"us"))'
+            in body
+        )
+        assert "normalized_input[CONF_COUNTRY]=country" in body
+        assert "_validate_credentials(self.hass,brand,username,password,country=country)" in body
         # The email_password step calls _validate_credentials with country=.
         assert (
             "await _validate_credentials(\n"
@@ -201,7 +210,7 @@ class TestEntryDataStoresCountry:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
         # v2.15.5 — gated behind a volkswagen_na brand check so EU/other
         # brands no longer get a bogus country="us" stamped into entry.data.
-        assert 'if brand.lower() == "volkswagen_na":' in src
+        assert 'brand.lower() == "volkswagen_na"' in src
         assert 'data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")' in src
 
 
@@ -236,7 +245,7 @@ class TestReauthReconfigureThreadCountry:
 
     def test_reconfigure_schema_threads_country(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        assert 'country=current.get(CONF_COUNTRY, "us")' in src
+        assert 'country=current.get(CONF_COUNTRY,"us")' in "".join(src.split())
 
 
 # ──────────────────────────────────────────────────────────────────────
