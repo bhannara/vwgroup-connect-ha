@@ -48,16 +48,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           python3 << 'PYTHON'
-          import re, os
+          import re, os, sys
 
           version = os.environ["VERSION"]
           changelog = open("CHANGELOG.md").read()
-
-          # Extract this version's section verbatim — keep all subheadings
-          # and bilingual EN/DE content as written in CHANGELOG.md.
-          pattern = rf"## \[{re.escape(version)}\][^\n]*\n(.*?)(?=\n## \[|\Z)"
-          match = re.search(pattern, changelog, re.DOTALL)
-          changelog_section = match.group(1).strip() if match else ""
 
           # All previous semver versions, newest first. Date is captured
           # from the `## [X.Y.Z] - YYYY-MM-DD` header when present.
@@ -81,12 +75,28 @@ jobs:
           lines.append("Home Assistant integration for Audi · VW · Škoda · SEAT · CUPRA · Porsche · VW US/CA.")
           lines.append("")
 
-          # ── What changed in this release ─────────────────────────────────
-          lines.append("## What's new in this release / Was ist neu in diesem Release")
-          lines.append("")
-          if changelog_section:
-              lines.append(changelog_section)
-          else:
+          # -- What changed in this release -----------------------------------
+          # The SHORT form, one line per change. This step used to paste the
+          # version's entire CHANGELOG section verbatim, which for v5.1.0 came
+          # to 44 681 characters over 653 lines -- and this body is what Home
+          # Assistant shows in its update dialog and HACS in the store
+          # listing, so the part a reader needs first was buried under the
+          # measurement and reasoning behind each fix.
+          #
+          # Nothing is maintained twice: build_release_notes derives each line
+          # from the entry's own bold title and links CHANGELOG.md for the long
+          # form. Its docstring carries the reasoning.
+          sys.path.insert(0, "scripts")
+          from build_release_notes import build as build_short_notes
+
+          try:
+              lines.append(build_short_notes(changelog, version))
+          except SystemExit as exc:
+              # No section for this version, or one with no entries. Publish
+              # the release with the link rather than failing the tag over it.
+              print(f"::warning::short release notes unavailable: {exc}")
+              lines.append("## What's new in this release / Was ist neu in diesem Release")
+              lines.append("")
               lines.append("_See the [CHANGELOG.md](" +
                            f"https://github.com/{repo}/blob/v{version}/CHANGELOG.md) for details._")
           lines.append("")
