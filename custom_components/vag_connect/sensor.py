@@ -4660,6 +4660,24 @@ _DATA_PRESENT_REQUIRED: frozenset[str] = frozenset({
     "electric_range_km",
     "combustion_range_km",
     "total_range_km",
+    # #1902 (@keylogicjohan's ID.7) — the Battery level sensor was the odd one
+    # out of its own family. ``electric_range_km``,
+    # ``battery_available_kwh`` and ``battery_cap_kwh`` were all here already,
+    # so a car that does not publish them gets no phantom entity — but
+    # ``battery_soc`` was not, and his car publishes an energy content and no
+    # state of charge. Once #1905 taught the drivetrain derivation to read that
+    # energy content as a drive battery, his electric entities appeared, and
+    # Battery level appeared with them: permanently empty, because the field it
+    # reads is one his feed never sends.
+    #
+    # Safe for every other EV, and the spawner is why. register_dynamic_spawner
+    # re-evaluates the build on every coordinator update and tracks what it has
+    # already added, so a sensor gated here "still spawns the moment its value
+    # arrives" — its own words. A normal EV therefore gets Battery level on the
+    # first poll that carries a state of charge, and keeps it; only a car that
+    # never sends one is spared the empty row. A restored snapshot also carries
+    # battery_soc forward, so an existing entry has it at setup.
+    "battery_soc",
     # v1.11.0 (#91) — same phantom-entity-prevention reasoning. Vehicles
     # whose API doesn't expose ``vehicleLights.lightsStatus.value.lights[]``
     # shouldn't get a "0" sensor or default-False binary sensor.
