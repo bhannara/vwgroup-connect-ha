@@ -197,15 +197,61 @@ class TestEnrich:
         """#923: is_online=None means UNKNOWN, not offline. The vw.de authproxy
         and EU-Data-Act channels never set is_online, and to_dict()/asdict keeps
         the key present as None — the old `not is_online` test read that as falsy
-        and stamped OFFLINE on cars that were answering reads. Unknown online +
-        no driving/charging signal must NOT become OFFLINE; it is left unset."""
+        and stamped OFFLINE on cars that were answering reads. Unknown online
+        must NOT become OFFLINE.
+
+        Amended for discussion #1415. The second assertion used to be
+        ``is None  # unknown, not fabricated``, with this same fixture — but the
+        fixture says ``is_driving: False, is_charging: False``, and the portal
+        sends both of those AFFIRMATIVELY (measured: it writes is_driving
+        True/False and is_charging from the charging state, and never writes
+        is_online at all). So the data here is not "no driving/charging signal";
+        it is the feed stating that the car is doing neither. Reading that as
+        "unknown" left the Vehicle Status sensor permanently blank on every
+        portal-fed car of every brand.
+
+        The #923 guarantee is unchanged and still asserted: unknown online is
+        not OFFLINE. The genuine no-signal case moved to its own test below,
+        where it keeps the never-fabricate rule."""
         import asyncio
         coord = self._make_coord()
         data = {"is_online": None, "is_driving": False, "is_charging": False,
                 "latitude": None, "longitude": None}
         result = asyncio.run(coord._enrich(data))
         assert result.get("vehicle_state") != "OFFLINE"
-        assert result.get("vehicle_state") is None  # unknown, not fabricated
+        assert result.get("vehicle_state") == "PARKED"
+
+    def test_vehicle_state_stays_unknown_when_nothing_is_known(self):
+        """The never-fabricate rule, in the case it is actually about.
+
+        Discussion #1415 — identity checks, not falsy tests, are what keeps
+        this true: a falsy test would match None as well as False and stamp
+        PARKED on a car that told us nothing. This is the last row of the truth
+        table and it must stay unknown."""
+        import asyncio
+        coord = self._make_coord()
+        data = {"is_online": None, "is_driving": None, "is_charging": None,
+                "latitude": None, "longitude": None}
+        result = asyncio.run(coord._enrich(data))
+        assert result.get("vehicle_state") is None, (
+            "PARKED was stamped on a car that reported neither a standstill "
+            "nor a charging state — that is fabrication (Hard Rule #8)"
+        )
+
+    def test_vehicle_state_parked_needs_both_signals(self):
+        """Half an answer is not an answer: one signal present and the other
+        absent still yields unknown."""
+        import asyncio
+        for driving, charging in ((False, None), (None, False)):
+            coord = self._make_coord()
+            data = {"is_online": None, "is_driving": driving,
+                    "is_charging": charging,
+                    "latitude": None, "longitude": None}
+            result = asyncio.run(coord._enrich(data))
+            assert result.get("vehicle_state") is None, (
+                f"is_driving={driving!r}, is_charging={charging!r} produced "
+                f"{result.get('vehicle_state')!r}"
+            )
 
     def test_vehicle_state_unknown_online_still_derives_charging(self):
         """An active charging signal wins even when is_online is unknown, so an
