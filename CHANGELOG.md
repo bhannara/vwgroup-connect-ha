@@ -367,6 +367,28 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   @bercedev deliberately left this out of the drivetrain fix rather than
   widening a ten-line change into a design argument, which was the right call.
 
+- **A new setup no longer freezes six characters of your VIN into an entity
+  id.** @benbrummer
+  ([#1801](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1801))
+  confirmed the volkswagen.de channel works on his Commercial Vehicles T6.1 and
+  reported, alongside it, an entity whose id embeds part of his VIN while its
+  friendly name reads correctly.
+
+  Both halves were components behaving as designed: Home Assistant derives an
+  `entity_id` once, from the device name at the moment the entity is first
+  created, and never touches it again, while the friendly name is recomputed
+  from live data on every update. So whichever entity spawns **first** fixes
+  that id forever — and the one that spawned first was the push event entity,
+  the only platform that needs no data to exist. At that moment there is no
+  model name, so the device name falls back to `{Brand} {VIN[-6:]}`.
+
+  The event entity now waits for there to have *been* a poll — not for any
+  particular field, which would change what the event stream is for — so it
+  appears one poll later with the model name known. The VIN fallback itself
+  stays: on an account with two cars and no model data yet, those six
+  characters are the only thing telling the devices apart. Existing entity ids
+  are unaffected and can be renamed in the entity settings.
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 
