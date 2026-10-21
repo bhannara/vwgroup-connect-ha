@@ -5177,7 +5177,20 @@ class VWEUClient(CariadBaseClient):
             d.auxiliary_heating_remaining_min = int(aux_rem)
 
         # ── Readiness / online ─────────────────────────────────────────────────
-        d.is_online = v(raw, "readiness", "readinessStatus", "value", "connectionState", "isOnline") is True
+        # Tri-state on purpose. ``v()`` returns None when the path is absent,
+        # and ``None is True`` collapsed that to a definite False — so a
+        # readiness reading that never arrived was reported as the car being
+        # offline, which is exactly what models.py forbids in writing: "Parser
+        # miss must NOT default to 'vehicle parked + offline'." vw_na, skoda
+        # and seat_cupra all check the type first; this connector did not, and
+        # it serves Audi as well as Volkswagen EU. On a feed that has stopped,
+        # the field stops arriving too, so the entry confidently reported the
+        # car offline while the official app showed it online (#1851, #1921).
+        # Downstream is already tri-state aware: coordinator.py reads only an
+        # explicit False as OFFLINE and leaves None unknown (#923).
+        _ready = v(raw, "readiness", "readinessStatus", "value", "connectionState", "isOnline")
+        if isinstance(_ready, bool):
+            d.is_online = _ready
         # v2.2.0 Phase 7 PR #2 — telematics modem daily power budget.
         # When False the modem is rationing wake-ups to preserve 12V —
         # long poll intervals are the user-visible symptom. Surfaced

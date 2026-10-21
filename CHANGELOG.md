@@ -46,6 +46,47 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Behoben / Fixed
+
+- **A readiness reading that never arrived was reported as the car being
+  offline.** On the Volkswagen EU connector — which serves **Audi** as well —
+  a missing field was collapsed into a definite *offline* instead of being
+  left unknown. `None is True` is `False`, and that was the whole mechanism.
+
+  @Mex-ai11's Audi A6 is where it surfaced
+  ([#1851](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1851)):
+  his entry reported *connection state: online* and *vehicle status: OFFLINE*
+  at the same moment, on a feed that had been frozen since 12 October. On a
+  feed that has stopped, the readiness field stops arriving with everything
+  else — so the integration stated his car was offline while the official app
+  showed it online. That contradiction is what sent him to re-authenticate and
+  rebuild his entry twice, for nothing.
+
+  The integration's own dataclass has said this must not happen since v2.0.1:
+  *"Parser miss must NOT default to 'vehicle parked + offline'. Conditional
+  automations like 'wake car when leaving driveway' relied on `is_online`
+  being honest about its uncertainty."* The field is `bool | None` on purpose.
+  Three of the four brand connectors check the type before assigning; this one
+  did not.
+
+  **A test was holding it in place**, which is the part worth saying out loud:
+  `test_empty_payload_no_crash` asserted `is_online is False` on an empty
+  payload — one line below asserting `battery_soc is None`, which gets the
+  same question right. Changing that assertion is the point of the fix, not a
+  casualty of it.
+
+  Nothing downstream needed touching: the coordinator has treated the field as
+  tri-state since #923 and reads only an explicit `False` as offline.
+
+  Pinned by seven mutations. Two of the tests were wrong first, both in the
+  same way and both caught by the mutation check rather than by review: one
+  asserted a sentence appeared anywhere in `models.py`, where that phrase
+  occurs three times, so deleting the one that governs this field passed on
+  the other two; the other accepted **any** enclosing `isinstance` as a guard,
+  and Škoda's assignment sits inside a type check on a different object, so
+  removing its real guard passed as well. Proximity is not containment.
+  ([#1921](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1921))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed

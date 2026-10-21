@@ -803,7 +803,12 @@ class TestVWEUStatusParsing:
         result = client._parse_status("VIN1", {}, {})
         assert result.vin == "VIN1"
         assert result.battery_soc is None
-        assert result.is_online is False
+        # Changing this line is the point of #1921, not a casualty of it. It
+        # used to assert ``is False``, which pinned the connector into turning
+        # a missing readiness reading into a definite "offline" — the opposite
+        # of what models.py states the field must do, and the line directly
+        # above it already gets the same question right for battery_soc.
+        assert result.is_online is None
 
 
 # ── AudiClient ─────────────────────────────────────────────────────────────────
