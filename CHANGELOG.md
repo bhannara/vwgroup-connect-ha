@@ -94,6 +94,37 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   the released version. Measured with and without the union driver — identical
   both times, because there is no conflict for a driver to resolve. It predates
   this file; `RELEASE_PROCESS.md` now says what to check and when.
+  ([#1908](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1908))
+
+- **Release notes are one line per change again, with the long form one click
+  away.** v5.1.0's release body was **44 681 characters over 654 lines**,
+  because the release workflow pasted the version's entire section of this file
+  into it verbatim. That body is what Home Assistant shows in its update
+  dialog and what HACS shows in the store listing, so the part a reader needs
+  first — what changed, and does it affect me — sat under paragraphs of
+  measurement and reasoning. The same release built through
+  `scripts/build_release_notes.py` is **4 499 characters over 79 lines**.
+
+  Nothing here gets shorter and nothing is written twice. Every entry already
+  opens with a bold title, and that title *is* the short form, so the builder
+  reads the titles out rather than asking anyone to maintain a second list that
+  would drift out of step with this one. Each line carries the entry's issue
+  and pull request numbers and the people who reported or fixed it, and the
+  body links this file at the release's own tag — not at `main`, so notes
+  opened in six months still lead to what that version said.
+
+  The long form stays the long form on purpose. It is written out in full for
+  whoever is debugging the same thing later, and so that a summary of a release
+  can be made from the reasoning rather than from the headline.
+
+  Pinned by fourteen mutations, each breaking one part and asserting the named
+  test catches it. Two of those mutations were wrong before they were right,
+  and both failures are the kind worth recording: one replaced the fix with a
+  *different correct* implementation and so reported an unearned pass, and an
+  earlier harness run died between mutating and restoring, left the mutation in
+  the tree, and the next run hashed that file as the original — restoring the
+  tree *to* the defect while reporting success. The harness now gates on a
+  green baseline before it mutates anything and restores in a `finally`.
 
 ### Behoben / Fixed
 
