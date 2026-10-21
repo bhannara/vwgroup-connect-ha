@@ -125,6 +125,7 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   the tree, and the next run hashed that file as the original — restoring the
   tree *to* the defect while reporting success. The harness now gates on a
   green baseline before it mutates anything and restores in a `finally`.
+  ([#1912](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1912))
 
 ### Behoben / Fixed
 
