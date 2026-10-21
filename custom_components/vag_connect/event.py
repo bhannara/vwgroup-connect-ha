@@ -89,9 +89,35 @@ async def async_setup_entry(
 
     event_types = [*_BRAND_EVENT_TYPES[brand], EVENT_TYPE_OTHER]
 
-    def _build_for_vin(vin: str, _vehicle: dict) -> list[Any]:
-        # Not gated on any data field — the event stream exists for every
-        # vehicle of a push-capable brand, independent of poll contents.
+    def _build_for_vin(vin: str, vehicle: dict) -> list[Any]:
+        # Still not gated on any data FIELD — the event stream exists for every
+        # vehicle of a push-capable brand, independent of what a poll contains.
+        # But it does now wait for there to have BEEN a poll.
+        #
+        # #1801 (@benbrummer) — his Commercial Vehicles T6.1 ended up with an
+        # entity whose id embeds six characters of his VIN. Home Assistant
+        # derives an entity_id once, from the device name at the moment the
+        # entity is first created, and never touches it again; the integration
+        # never rewrites one either. So whichever entity spawns FIRST fixes
+        # that id forever.
+        #
+        # This was the one that spawned first, and it spawned before any data
+        # existed — at which point _device_name has no model to use and falls
+        # back to "{Brand} {VIN[-6:]}". Every other entity waits for a field,
+        # gets the real model, and is named properly. So the single platform
+        # that needed no data met the single naming path that needs data.
+        #
+        # Returning [] here is the spawner's documented "not ready yet" answer:
+        # it re-evaluates on every coordinator update, so the entity appears on
+        # the first poll instead, by which time the model name is known. The
+        # entity is not withheld on the strength of its own contents — it is
+        # withheld until the device it attaches to can be named.
+        #
+        # Deliberately NOT fixed by dropping the VIN fallback. On an account
+        # with two cars and no model data yet, those six characters are the
+        # only thing telling the devices apart.
+        if not vehicle:
+            return []
         return [VagConnectPushEventEntity(coordinator, vin, event_types)]
 
     register_dynamic_spawner(entry, coordinator, async_add_entities, _build_for_vin)

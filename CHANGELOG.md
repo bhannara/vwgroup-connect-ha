@@ -346,6 +346,49 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   added in #1901 exist so a probe that ran and was refused can be told apart
   from one that never ran, and a clear takes those with it.
 
+- **An EV that sends no state of charge no longer gets an empty Battery level
+  sensor.** Follow-up to
+  [#1902](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1902):
+  @keylogicjohan's ID.7 sends the pack's energy content and no state of charge,
+  so once the drivetrain fix taught the integration to recognise it as electric,
+  its electric entities appeared — and **Battery level** appeared with them,
+  permanently empty, because the field it reads is one his feed never sends.
+
+  `battery_soc` was the odd one out of its own family: `electric_range_km`,
+  `battery_available_kwh` and `battery_cap_kwh` were all already in the set of
+  keys whose entity is not created until the field is actually present, and it
+  was not. It is now.
+
+  Safe for every other EV, and the dynamic spawner is why: it re-evaluates on
+  every poll and tracks what it has already added, so a sensor gated this way
+  still appears the moment its value arrives. A normal EV gets Battery level on
+  the first poll that carries a state of charge and keeps it; a restored
+  snapshot carries the value forward, so an existing entry has it at setup.
+  @bercedev deliberately left this out of the drivetrain fix rather than
+  widening a ten-line change into a design argument, which was the right call.
+
+- **A new setup no longer freezes six characters of your VIN into an entity
+  id.** @benbrummer
+  ([#1801](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1801))
+  confirmed the volkswagen.de channel works on his Commercial Vehicles T6.1 and
+  reported, alongside it, an entity whose id embeds part of his VIN while its
+  friendly name reads correctly.
+
+  Both halves were components behaving as designed: Home Assistant derives an
+  `entity_id` once, from the device name at the moment the entity is first
+  created, and never touches it again, while the friendly name is recomputed
+  from live data on every update. So whichever entity spawns **first** fixes
+  that id forever — and the one that spawned first was the push event entity,
+  the only platform that needs no data to exist. At that moment there is no
+  model name, so the device name falls back to `{Brand} {VIN[-6:]}`.
+
+  The event entity now waits for there to have *been* a poll — not for any
+  particular field, which would change what the event stream is for — so it
+  appears one poll later with the model name known. The VIN fallback itself
+  stays: on an account with two cars and no model data yet, those six
+  characters are the only thing telling the devices apart. Existing entity ids
+  are unaffected and can be renamed in the entity settings.
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 
