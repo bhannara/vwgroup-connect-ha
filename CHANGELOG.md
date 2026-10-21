@@ -439,6 +439,33 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   characters are the only thing telling the devices apart. Existing entity ids
   are unaffected and can be renamed in the entity settings.
 
+- **A release could publish with no change list at all, on a green run.**
+  Found while cutting this release, in the path added by the notes split
+  earlier in it. If a tag is pushed before `CHANGELOG.md`'s `[Unreleased]`
+  heading has been renamed to the version, the notes builder refuses, the
+  workflow catches the refusal and publishes the release with only a link —
+  and that is the body Home Assistant shows in its update dialog and HACS in
+  the store listing. The run stayed green and the only trace was a warning in
+  a log nobody reads, so everyone would have seen an empty-looking release
+  with nothing saying why. Tags are immutable, so it would have been found
+  late or not at all.
+
+  The release still publishes, deliberately: failing earlier would leave a
+  public tag with no release and no `vag_connect.zip`, which is worse than a
+  thin page. What changed is that the degraded path can no longer pass for a
+  normal one. The body now states that it is incomplete, in both languages,
+  and a final step turns the run red **after** the release and the asset
+  exist — so nothing is lost and nothing is silent. The step also prints how
+  to repair it without touching the tag.
+
+  The same axis as the rest of this release, turned on its own release path:
+  can the reader tell a failure from a success? Verified by extracting the
+  workflow's own code and running it on both paths rather than by asserting
+  about it — and the first version of the test that pins the red run survived
+  a mutation, because `release.yml` carries a second `exit 1` in an unrelated
+  step. That assertion is scoped to its own step now.
+  ([#1916](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1916))
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 
