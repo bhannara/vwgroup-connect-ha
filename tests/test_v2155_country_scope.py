@@ -92,10 +92,13 @@ class TestEuPortalStateIgnoresNaCountry:
 
 
 class TestBuildEntryDataGatesCountry:
-    def test_country_only_stored_for_volkswagen_na(self) -> None:
+    def test_country_only_stored_for_volkswagen_na_or_audi_kr(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
         # The gate exists ...
-        assert 'if brand.lower() == "volkswagen_na":' in src
+        # NA market selection and the APAC Audi KR alias are both persisted.
+        assert 'brand.lower() == "volkswagen_na"' in src
+        assert 'brand.lower() == "audi"' in src
+        assert 'user_input.get(CONF_COUNTRY, "").lower() == "kr"' in src
         assert 'data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")' in src
 
     def test_country_not_stored_unconditionally(self) -> None:
@@ -105,14 +108,14 @@ class TestBuildEntryDataGatesCountry:
 
     def test_build_entry_data_country_inside_brand_block(self) -> None:
         """Structurally: the only CONF_COUNTRY write in _build_entry_data sits
-        under the volkswagen_na branch (defensive against an accidental
-        un-gating regression)."""
+        under the volkswagen_na / Audi KR condition (defensive against
+        an accidental un-gating regression)."""
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
         start = src.index("def _build_entry_data(")
         # The function ends at its sole ``return data`` statement.
         end = src.index("return data", start) + len("return data")
         body = src[start:end]
-        gate_idx = body.index('if brand.lower() == "volkswagen_na":')
+        gate_idx = body.index('brand.lower() == "volkswagen_na"')
         write_idx = body.index("data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY")
         assert write_idx > gate_idx, "CONF_COUNTRY write is not under the gate"
 
