@@ -130,16 +130,99 @@ def test_each_line_names_its_issue() -> None:
     )
 
 
-def test_a_number_in_the_title_is_not_repeated_after_it() -> None:
-    """Some entries write their own number into the bold title. The line then
-    read ``… recognised as having a battery again (#1902) — #1902 #1661``."""
+def test_a_number_in_the_title_moves_out_of_it() -> None:
+    """Some entries write their own number into the bold title.
+
+    This was first fixed the other way round — the title kept ``(#1902)`` and
+    the duplicate was stripped from the reference list — and that was wrong in
+    a way only a line-by-line audit of the real output caught: the entry also
+    cites ``#1661`` as precedent, so suppressing its own number left
+    ``… battery again (#1902) — #1661``, whose only trailing number belongs to
+    a different change. The number is moved out of the title instead, so the
+    references list is complete and starts with the right one.
+    """
     entry = (
-        "- **Something is fixed again (#1902).** The body mentions #1902 once "
-        "more and cites #1661 as the precedent it follows."
+        "- **Something is fixed again (#1902).** The body cites #1661 as the "
+        "precedent it follows."
     )
     line = brn.short_line(entry)
-    assert line.count("#1902") == 1, line
-    assert "#1661" in line, "the precedent was dropped along with the duplicate"
+    assert line.count("#1902") == 1, f"the number is duplicated: {line}"
+    assert "again (#1902)" not in line, "the number is still inside the title"
+    assert "#1902 #1661" in line, (
+        f"the entry's own number must come first, not the precedent: {line}"
+    )
+
+
+def test_the_subject_reference_comes_first() -> None:
+    """Source order puts a cited precedent in front of the actual subject.
+
+    The real case: ``The e-mail code step no longer tells you your password is
+    wrong`` cites two older hardenings before closing with its own issue, so
+    the line read ``#1313 #1679 #1843`` — the number a reader reads first was
+    a different, closed change from months earlier.
+    """
+    entry = (
+        "- **The e-mail code step no longer tells you your password is "
+        "wrong.** It was hardened for exactly this in "
+        "[#1313](https://github.com/x/y/issues/1313) and "
+        "[#1679](https://github.com/x/y/issues/1679). "
+        "([#1843](https://github.com/x/y/issues/1843))"
+    )
+    line = brn.short_line(entry)
+    assert "#1843 #1313 #1679" in line, line
+
+
+def test_source_order_is_kept_when_the_entry_gives_no_signal() -> None:
+    """The limit of the rule above, and why it is safe.
+
+    Only 3 of 16 entries in this release close with a parenthetical, so the
+    trailing form is a habit and not a convention. Entries with neither signal
+    already list their subject first — the Scout entry below is about all
+    three of its issues — so nothing is reordered for them. Reordering on a
+    guess would misfire on the majority.
+    """
+    entry = (
+        "- **An unmappable field stops asking three different people.** It "
+        "raised the repair on Volkswagen ([#1831](https://github.com/x/y/issues/1831)), "
+        "on an ID.7 ([#1838](https://github.com/x/y/issues/1838)) and on a "
+        "Tavascan ([#1861](https://github.com/x/y/issues/1861))."
+    )
+    assert brn.subject_ref(entry) is None, "an entry with no signal claimed one"
+    assert "#1831 #1838 #1861" in brn.short_line(entry)
+
+
+def test_a_discussion_is_linked_not_hash_numbered() -> None:
+    """A bare ``#1415`` would send the reader to the wrong object.
+
+    GitHub numbers Discussions separately from issues and pull requests, so
+    ``#1415`` in a release body autolinks to *issue* 1415 — which exists, and
+    is somebody else's. The one line in this release whose subject is a
+    discussion pointed at an unrelated issue, which is a wrong destination
+    rather than an untidy one.
+    """
+    entry = (
+        "- **The Vehicle Status sensor was blank.** @someone reported it on a "
+        "Tavascan ([discussion #1415](https://github.com/x/y/discussions/1415)), "
+        "and #923 already guaranteed the opposite."
+    )
+    line = brn.short_line(entry)
+    assert "[discussion #1415](https://github.com/x/y/discussions/1415)" in line, line
+    assert " #1415" not in line.replace("[discussion #1415]", ""), (
+        f"the discussion is still emitted as a bare issue reference: {line}"
+    )
+    assert "#923" in line, "the ordinary issue reference was lost"
+
+
+def test_every_discussion_reference_in_the_real_section_is_linked() -> None:
+    """Pinned against the shipping changelog, not only a fixture: an entry
+    added later with a discussion link must not regress to a bare number."""
+    heading, section = _newest_section_with_entries()
+    body = brn.build(_changelog(), "9.9.9", heading)
+    for num in re.findall(r"/discussions/(\d+)", section):
+        assert f"discussion #{num}" in body or f"#{num}" not in body, (
+            f"discussion {num} appears as a bare #{num}, which links to issue "
+            f"{num} instead"
+        )
 
 
 def test_a_wrapped_title_is_read_whole() -> None:

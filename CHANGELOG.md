@@ -102,8 +102,12 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   into it verbatim. That body is what Home Assistant shows in its update
   dialog and what HACS shows in the store listing, so the part a reader needs
   first — what changed, and does it affect me — sat under paragraphs of
-  measurement and reasoning. The same release built through
-  `scripts/build_release_notes.py` is **4 499 characters over 79 lines**.
+  measurement and reasoning. Rebuilt through the new path, that same v5.1.0
+  body is **6 222 characters over 99 lines**, of which the change list itself
+  is 4 029 — the rest is the header, the diff link and the install notes the
+  body always carried. The first number published here was wrong: it was
+  measured on a different section and before the empty-bullet fix, and a
+  line-by-line audit of the generated output is what caught it.
 
   Nothing here gets shorter and nothing is written twice. Every entry already
   opens with a bold title, and that title *is* the short form, so the builder
@@ -117,7 +121,19 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   whoever is debugging the same thing later, and so that a summary of a release
   can be made from the reasoning rather than from the headline.
 
-  Pinned by fourteen mutations, each breaking one part and asserting the named
+  Three defects were found by auditing the generated output line against line
+  against the entries it came from, which is the check that the tests did not
+  replace. A reference to a **Discussion** was emitted as a bare `#1415`, and
+  GitHub numbers Discussions separately — so the one line whose subject is a
+  discussion linked to *issue* 1415, somebody else's. Those are now explicit
+  links. A cited precedent could be listed in front of the change itself
+  (`#1313 #1679 #1843`), so the first number a reader saw belonged to a closed
+  issue from months earlier; where an entry says which reference is its own,
+  that one now comes first, and where it does not, 12 of 16 entries already
+  list theirs first and nothing is reordered on a guess. And one line counted
+  its three reporters without naming any of them.
+
+  Pinned by eighteen mutations, each breaking one part and asserting the named
   test catches it. Two of those mutations were wrong before they were right,
   and both failures are the kind worth recording: one replaced the fix with a
   *different correct* implementation and so reported an unearned pass, and an
@@ -215,11 +231,11 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   quietly misleading the next reader.
 - **An unmappable field stops asking three different people to file it, and
   dismissing the Scout card now sticks.** `eu_data_act.jobStatus` raised the
-  user-facing Scout repair three times — on Volkswagen
+  user-facing Scout repair three times — on @Dirk-fs's Volkswagen
   ([#1831](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1831)), on
-  an ID.7 Tourer GTX
+  @permyr's ID.7 Tourer GTX
   ([#1838](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1838)) and
-  on a CUPRA Tavascan
+  on @sssfamilientermine-wq's CUPRA Tavascan
   ([#1861](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1861)).
   The field is genuinely unmapped: the shipped catalogue has no entry for it at
   all. It is now kept out of the repair while staying fully visible in

@@ -55,6 +55,19 @@ _ENTRY_RE = re.compile(r"^- \*\*")
 _REF_RE = re.compile(r"#(\d{2,6})\b")
 #: A GitHub handle. Not ``@`` inside an e-mail address or a code span.
 _HANDLE_RE = re.compile(r"(?<![\w.@/])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)\b")
+#: A reference an entry writes into its own bold title, e.g. ``(#1902)``.
+_TITLE_REF_RE = re.compile(r"\s*\(#\d{2,6}\)\s*$")
+#: A reference whose link target is a **Discussion**. GitHub numbers
+#: Discussions separately from issues and pull requests, so a bare ``#1415`` in
+#: a release body autolinks to *issue* 1415 — a different object, and in this
+#: repository someone else's. The one entry here whose subject is a discussion
+#: sent the reader to an unrelated issue, which is a wrong destination rather
+#: than a cosmetic flaw, so these are rendered as explicit links instead.
+_DISCUSSION_REF_RE = re.compile(
+    r"\[(?:discussion )?#(\d{2,6})\]\(([^)]*?/discussions/\d+)\)"
+)
+#: A reference the entry closes with, e.g. ``([#1843](…))`` as its last token.
+_TRAILING_REF_RE = re.compile(r"\(\[(?:discussion )?#(\d{2,6})\]\([^)]*\)\)\s*$")
 
 
 def section_for(changelog: str, heading: str) -> str:
@@ -116,7 +129,15 @@ def title_of(entry: str) -> str:
     joined = re.sub(r"\s+", " ", joined)
     match = re.search(r"\*\*(.+?)\*\*", joined)
     text = match.group(1) if match else joined.lstrip("- ").strip()
-    return text.strip().rstrip(".").strip()
+    text = text.strip().rstrip(".").strip()
+    # A number written into the title is moved out of it, because the
+    # references are appended separately. Suppressing the duplicate the other
+    # way round was the first attempt and it is wrong: with "(#1902)" left in
+    # the title and stripped from the tail, the line read "… battery again
+    # (#1902) — #1661", whose only trailing number belongs to the precedent
+    # the entry cites rather than to the change itself.
+    text = _TITLE_REF_RE.sub("", text).strip().rstrip(".").strip()
+    return text
 
 
 def refs_of(entry: str) -> list[str]:
@@ -143,24 +164,53 @@ def handles_of(entry: str) -> list[str]:
 _MAX_REFS = 4
 
 
+def subject_ref(entry: str) -> str | None:
+    """The number this entry is *about*, when the entry itself says which.
+
+    Two signals, and the measurement that decides how far to trust them: of
+    the 16 entries in this release, one carries its number in the bold title
+    and three close with ``([#N](…))`` — and those four are **exactly** the
+    entries where source order puts a cited precedent in front of the subject.
+    The other twelve carry neither signal and already list their subject
+    first. So a signal, where present, identifies the subject; where absent,
+    nothing is reordered and the behaviour is unchanged.
+
+    This is deliberately not a general rule about reference position. Only 3
+    of 16 entries end with a parenthetical, so the trailing form is a habit
+    rather than a convention, and treating it as one would misfire on the
+    majority.
+    """
+    title_nums = _REF_RE.findall(title_of(entry))
+    if title_nums:
+        return title_nums[0]
+    trailing = _TRAILING_REF_RE.search(entry.rstrip())
+    return trailing.group(1) if trailing else None
+
+
 def short_line(entry: str) -> str:
     title = title_of(entry)
     parts: list[str] = []
-    # A number already in the title is not repeated after it: some entries
-    # write "(#1902)" into the bold title, and the line then read
-    # "... again (#1902) - #1902".
-    in_title = set(_REF_RE.findall(title))
-    refs = [n for n in refs_of(entry) if n not in in_title]
+    discussions = dict(_DISCUSSION_REF_RE.findall(entry))
+    refs = refs_of(entry)
+
+    # The subject first. Left in source order, the e-mail-code entry read
+    # "#1313 #1679 #1843" — two issues closed months earlier in front of the
+    # one the line is actually about, which is the number a reader reads first.
+    subject = subject_ref(entry)
+    if subject is not None and subject in refs:
+        refs = [subject] + [n for n in refs if n != subject]
+
     if refs:
-        # Capped, not chosen. Several entries cite the precedent they follow
-        # before their own issue, so picking "the" subject number out of
-        # source order would be wrong as often as right -- all of them are
-        # shown, bounded so the line stays readable.
+        # Capped, not chosen: beyond the subject, an entry's remaining
+        # references are all genuinely related and there is no signal saying
+        # which matters more, so they are kept in source order and bounded.
         shown = refs[:_MAX_REFS]
         more = len(refs) - len(shown)
-        parts.append(
-            " ".join(f"#{n}" for n in shown) + (f" +{more}" if more else "")
-        )
+        rendered = [
+            f"[discussion #{n}]({discussions[n]})" if n in discussions else f"#{n}"
+            for n in shown
+        ]
+        parts.append(" ".join(rendered) + (f" +{more}" if more else ""))
     people = handles_of(entry)
     if people:
         parts.append("thanks " + ", ".join(f"@{h}" for h in people))
