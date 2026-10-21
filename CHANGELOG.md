@@ -46,6 +46,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
+
 ### Geändert / Changed
 
 - **Removed a constructor argument that looked like multi-brand support and
