@@ -59,8 +59,10 @@ _PY_URL_RE = re.compile(
     # Same path-suffix as ``_BASE`` from the drift-check perspective.
     r'f["\']\{(?:_BASE|base_url|baseurl|base)\}([^"\']+)["\']'
 )
+# Audi engine URLs can use either the original constant or the regional
+# accessor (which selects the EMEA/APAC host but keeps the same path).
 _PY_ENGINE_URL_RE = re.compile(
-    r'f["\']\{_ENGINE_BASE\}([^"\']+)["\']'
+    r'f["\']\{(?:_ENGINE_BASE|self\._engine_base\(\))\}([^"\']+)["\']'
 )
 # v2.1.0 — extract path-suffix from f"{self._base_for_vin(...)}/..."
 # usages. Same suffix as {_BASE}/... — they share Bruno coverage.
