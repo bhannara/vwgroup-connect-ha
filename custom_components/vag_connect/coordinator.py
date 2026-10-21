@@ -7801,7 +7801,44 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 data["vehicle_state"] = "CHARGING"
             elif online is True:
                 data["vehicle_state"] = "PARKED"
-            # else: is_online unknown + no driving/charging → leave unset (unknown)
+            elif (
+                data.get("is_driving") is False
+                and data.get("is_charging") is False
+            ):
+                # Discussion #1415 (@theblarney1) — a portal-fed car never gets
+                # here otherwise, and the sensor sat permanently unknown.
+                #
+                # Reaching this branch already means ``online`` is None: False
+                # is taken by the OFFLINE branch at the top and True by the
+                # PARKED branch directly above. An explicit ``online is None``
+                # here read well and was removed after the mutation check
+                # could not make its absence fail — a condition no test can
+                # pin is documentation pretending to be logic, so the
+                # reasoning is written here instead.
+                #
+                # The EU Data Act portal sends ``is_online`` ZERO times
+                # (measured: no writer for it anywhere in _eu_data_act.py), so
+                # ``online`` is always None on such a car, and none of the four
+                # branches above could fire. It does send the other two
+                # affirmatively — ``is_driving`` True/False from the standstill
+                # signal, ``is_charging`` from the charging state — so "not
+                # driving and not charging" is a statement the feed actually
+                # makes, not an absence being read as a negative.
+                #
+                # That distinction is why this is ``is False`` and not ``not
+                # data.get(...)``. A falsy test would also match None and
+                # stamp PARKED on a car that told us nothing, which is exactly
+                # the fabrication Hard Rule #8 forbids. With identity checks
+                # the last row of the truth table — nothing known at all —
+                # still yields unknown.
+                #
+                # Worth being clear about the scope, because the public
+                # diagnosis of this was narrower and wrong: it is not a
+                # CUPRA/SEAT problem and not the 403 wall. ``vehicle_state`` is
+                # derived here, channel-agnostically, for every brand, so the
+                # sensor was unknown on EVERY portal-fed car of every brand.
+                data["vehicle_state"] = "PARKED"
+            # else: nothing affirmative either way → leave unset (unknown)
 
         # Derive is_driving from vehicle_state if client didn't set it
         if not data.get("is_driving") and data.get("vehicle_state") == "DRIVING":

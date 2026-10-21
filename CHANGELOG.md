@@ -279,6 +279,29 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   ("only a genuine 401 keeps the credential verdict"); the code step never was.
   ([#1843](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1843))
 
+- **The Vehicle Status sensor was blank on every portal-fed car, of every
+  brand.** @theblarney1 reported it permanently unknown on a portal-fed CUPRA
+  Tavascan
+  ([discussion #1415](https://github.com/its-me-prash/vwgroup-connect-ha/discussions/1415)),
+  and the public diagnosis at the time was wrong in all three of its
+  specifics: the sensor does not have one writer but two, the one that governs
+  his car is a channel-agnostic derivation in the coordinator rather than the
+  403-walled CUPRA call, and there is no engine-running gate in it.
+
+  The real cause is wider. That derivation stamps OFFLINE / DRIVING / CHARGING
+  / PARKED, and its PARKED branch required `is_online` to be `True` — a field
+  the EU Data Act portal writes **zero** times. So on any portal-fed car
+  `is_online` is unknown, no branch could fire, and the sensor stayed blank
+  regardless of brand: Volkswagen and Audi as much as CUPRA and SEAT.
+
+  It now reads PARKED when the feed affirmatively says the car is neither
+  driving nor charging — both of which the portal does send. The checks are
+  `is False` rather than falsy tests, so a car that reported nothing at all
+  still yields unknown instead of a fabricated state; that case has its own
+  test beside the #923 guarantee it belongs with. One pre-existing test was
+  amended rather than deleted: its subject (unknown online is not OFFLINE)
+  still holds and is still asserted.
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 
