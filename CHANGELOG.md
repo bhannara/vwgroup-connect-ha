@@ -279,6 +279,31 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   ("only a genuine 401 keeps the credential verdict"); the code step never was.
   ([#1843](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1843))
 
+- **Two diagnostics that described a setup the user no longer had.**
+  @indigomejor ([#1850](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1850))
+  found both while measuring v5.1.0.
+
+  His portal-less entry logged *"3 polls with no fresh snapshot — standing down
+  from the 60s drop-retry"* while his measured cadence stayed at 621-643 s
+  against a 600 s interval, so nothing ever stood down: the counting block sat
+  *before* the gate that asks whether a portal is armed. The number was true
+  and the action it described never happened. Not purely cosmetic, which is how
+  he reported it — the streak also kept climbing while the portal was off, so
+  arming it later began with the retry budget already spent and the fast retry
+  never got its first poll. Counting and logging are now gated on the same two
+  conditions the scheduler uses; the anchor itself is still tracked
+  unconditionally, because letting it go stale would spend the budget one poll
+  after saving it.
+
+  And his diagnostics kept reporting `skoda_official: disabled by source mode
+  (mysmob_only)` after he had switched mode and the channel had been armed. The
+  cause is a missing *write*, not a missing clear: the steady-state
+  already-enrolled path runs on every poll and was the only arming path that
+  recorded no label, so whichever label was written last stood for the life of
+  the client. A clear would have been the wrong instrument — the failure labels
+  added in #1901 exist so a probe that ran and was refused can be told apart
+  from one that never ran, and a clear takes those with it.
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 

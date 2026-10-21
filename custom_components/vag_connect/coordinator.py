@@ -4088,6 +4088,26 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             self._reconcile_skoda_manual_key_repair(vins)
             if stored:
                 self._arm_official_from_map(stored)
+                # #1850 (@indigomejor) — say so. This is the steady-state path:
+                # it runs on EVERY poll of an already-enrolled entry, and it was
+                # the only arming path that wrote no label, while the gate at
+                # ~4029, the no-mint path below and the mint path all write one.
+                #
+                # The consequence is not an empty diagnostic but a STALE one:
+                # whatever label was written last stands for the life of the
+                # client. He switched source mode and his diagnostics kept
+                # reporting "disabled by source mode (mysmob_only)" for a
+                # channel that had since been armed — describing the setup he
+                # used to have.
+                #
+                # A missing write, not a missing clear, and the fix is the
+                # write. Clearing the dict would have been the wrong instrument:
+                # #1901 deliberately put failure labels in there so a probe that
+                # ran and was refused can be told apart from one that never ran,
+                # and a clear at the wrong moment throws that away.
+                self._skoda_probe(
+                    "skoda_official", f"armed from {len(stored)} stored key(s)"
+                )
                 # Once per session: is ANOTHER integration/app using the same
                 # official API on this account? (shared per-car budget → faster
                 # rate-limit/ban). Only checked for already-enrolled users here —
@@ -4862,18 +4882,42 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             # `and` short-circuited before touching the attribute.
             _prev_anchor = getattr(self, "_drop_anchor_seen", None)
             self._drop_overdue_streak = getattr(self, "_drop_overdue_streak", 0)
-            if _drop_anchor_advanced(_prev_anchor, _cap_anchor):
-                self._drop_overdue_streak = 0
-            elif _drop_overdue(interval_s, _cap_anchor, _decision_now):
-                self._drop_overdue_streak += 1
-                if self._drop_overdue_streak == _DROP_RETRY_MAX_STREAK:
-                    _LOGGER.debug(
-                        "EU Data Act portal: %d polls with no fresh snapshot — "
-                        "standing down from the %ds drop-retry to the configured "
-                        "%ds until one lands (#1850)",
-                        self._drop_overdue_streak, _DROP_RETRY_S, interval_s,
-                    )
+            # #1850 — only count, and only speak, where the drop-retry is
+            # actually in play. The same two conditions the scheduling gate
+            # below uses, because a budget spent on polls that never used the
+            # retry is not a budget, and a stand-down message about a retry
+            # that never ran is not information.
+            if not nightly and _portal is not None:
+                if _drop_anchor_advanced(_prev_anchor, _cap_anchor):
+                    self._drop_overdue_streak = 0
+                elif _drop_overdue(interval_s, _cap_anchor, _decision_now):
+                    self._drop_overdue_streak += 1
+                    if self._drop_overdue_streak == _DROP_RETRY_MAX_STREAK:
+                        _LOGGER.debug(
+                            "EU Data Act portal: %d polls with no fresh snapshot — "
+                            "standing down from the %ds drop-retry to the configured "
+                            "%ds until one lands (#1850)",
+                            self._drop_overdue_streak, _DROP_RETRY_S, interval_s,
+                        )
+            # Tracked unconditionally on purpose. The anchor is what the NEXT
+            # decision compares against, so letting it go stale while the
+            # portal is off would make the first armed poll read "no drop since
+            # forever" and spend the budget it was just spared.
             self._drop_anchor_seen = _cap_anchor
+            # #1850 (@indigomejor) — the streak block above counts and LOGS a
+            # stand-down from the drop-retry on entries where the drop-retry
+            # never ran: it sits before this gate, so a portal-less entry (and
+            # any entry at night) emitted "N polls with no fresh snapshot —
+            # standing down from the 60s drop-retry" while the gate below took
+            # the else branch and used the plain interval. His measured cadence,
+            # 621-643 s against a 600 s interval, is the proof that nothing
+            # stood down — the number in the message was true, the action it
+            # described never happened.
+            #
+            # Not only cosmetic, which is how it was reported: the streak also
+            # kept climbing while the portal was off, so arming the portal later
+            # began with the retry budget already spent and the fast retry never
+            # got its first poll.
             if not nightly and _portal is not None and _cap_anchor is not None:
                 sleep_s: float = _drop_anchored_sleep_s(
                     interval_s,
