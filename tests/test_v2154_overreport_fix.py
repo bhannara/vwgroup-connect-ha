@@ -132,9 +132,22 @@ def _map() -> VehicleData:
 
 # ── timer family populates from the bare data-point leaves ──────────────────────
 def test_next_charge_timer_start_finish_populate() -> None:
+    # #1903 — the assertion was on the exact string including its ``Z``. These
+    # two fields are local wall-clock (measured against a reporter's charger),
+    # so the zone in the output is now the local one and differs between a
+    # laptop and CI. The subject of this test is that the bare leaves POPULATE
+    # the family at all, which is unchanged; the digits are checked, the suffix
+    # is not.
+    from datetime import datetime
+
     d = _map()
-    assert d.next_charge_timer_start_at == "2026-06-22T11:00:00Z"
-    assert d.next_charge_timer_finish_at == "2026-06-22T12:00:00Z"
+    for value, want in (
+        (d.next_charge_timer_start_at, (11, 0)),
+        (d.next_charge_timer_finish_at, (12, 0)),
+    ):
+        parsed = datetime.fromisoformat(value)
+        assert parsed.tzinfo is not None, "naive is read as UTC downstream"
+        assert (parsed.hour, parsed.minute) == want
 
 
 def test_next_charge_target_reachability_populates() -> None:

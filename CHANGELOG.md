@@ -279,6 +279,27 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   ("only a genuine 401 keeps the credential verdict"); the code step never was.
   ([#1843](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1843))
 
+- **The charge-timer sensors and the charging calendar are no longer off by
+  your UTC offset.** @keylogicjohan
+  ([#1903](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1903))
+  runs an ID.7 in Sweden, where the EU Data Act feed reported
+  `next_charge_timer_start_at = 2026-10-20T18:28:00Z` for a session his charger
+  logged as starting `18:28:00+02:00`. The wall-clock reading was right and the
+  `Z` was wrong, so everything downstream ran two hours late.
+
+  Fixed narrowly, and his own cross-check is why that was possible: he verified
+  that the *other* timestamps in the same feed are genuinely UTC — `last_seen_at`
+  against `instrument_cluster_time` — so this is two fields that are naive local
+  time wearing a UTC suffix, not a feed-wide offset needing the car's timezone.
+  The thirteen other timestamps in that module are untouched.
+
+  Stripping the suffix would not have been enough: every timestamp consumer here
+  reads a naive value as UTC, so the same two-hour error would have reappeared
+  one layer down. The reading is re-stamped with the local zone instead. The
+  limitation, stated rather than hidden: for a car in a different timezone from
+  the Home Assistant instance this is wrong by the difference between them, and
+  the feed carries nothing that would let us do better.
+
 
 ## [5.1.0] - 2026-10-20 — Saying what actually happened / Sagen, was wirklich passiert ist
 

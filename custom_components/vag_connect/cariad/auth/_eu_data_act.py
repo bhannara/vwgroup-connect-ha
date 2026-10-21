@@ -1671,6 +1671,57 @@ def _finished_time_to_min(value: str | None, unit: str | None) -> int | None:
     return int(f * factor)
 
 
+def _local_wallclock(raw: str | None) -> str | None:
+    """Normalise a timestamp the feed states as LOCAL wall-clock time.
+
+    #1903 (@keylogicjohan) — the charge-timer fields arrive as the car's own
+    wall-clock time carrying a ``Z``. His ID.7 in Sweden (UTC+2) reported
+    ``2026-10-20T18:28:00Z`` for a session the charger itself logged starting at
+    ``18:28:00+02:00``, so the ``Z`` is wrong rather than the clock. Taken at
+    face value the sensors and the charging calendar were two hours late.
+
+    His report is also what made this fixable narrowly rather than globally:
+    the OTHER timestamps in the same feed are genuinely UTC — he cross-checked
+    ``last_seen_at`` against ``instrument_cluster_time`` and they agree. So this
+    is not a feed-wide offset needing the car's timezone; it is two fields that
+    are naive local wearing a UTC suffix, and only those two call this.
+
+    Naive is NOT an option as the output. Every timestamp consumer in this
+    integration reads a naive value as UTC (``raw.replace(tzinfo=timezone.utc)``
+    in the sensor layer, ``dt.replace(tzinfo=dt_util.UTC)`` in the calendar), so
+    stripping the suffix would re-introduce the same two-hour error one layer
+    down. The wall-clock reading is therefore re-stamped with the system's local
+    zone, which is the Home Assistant timezone in every normal install.
+
+    The limitation, stated rather than hidden: for a car in a different timezone
+    from the Home Assistant instance this is wrong by the difference between
+    them, and the feed carries nothing that would let us do better — the
+    correct value is only knowable in the car's own local time.
+
+    A numeric value is an epoch, which is absolute and needs none of this, so it
+    is handed to :func:`_epoch_or_iso` unchanged.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    try:
+        float(s)
+    except (ValueError, TypeError):
+        pass
+    else:
+        return _epoch_or_iso(s)
+    from datetime import datetime  # noqa: PLC0415
+
+    try:
+        parsed = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return s  # unparseable — pass through, same contract as _epoch_or_iso
+    local_zone = datetime.now().astimezone().tzinfo
+    return parsed.replace(tzinfo=local_zone).isoformat()
+
+
 def _epoch_or_iso(raw: str | None) -> str | None:
     """Normalise a capture timestamp to ISO-8601 UTC.
 
@@ -5088,14 +5139,20 @@ def map_dataset_to_vehicle_data(
         "estimated_start_time",
     )
     if _ncs is not None and d.next_charge_timer_start_at is None:
-        d.next_charge_timer_start_at = _epoch_or_iso(_ncs)
+        # #1903 — stated as local wall-clock, not UTC. See
+        # _local_wallclock; the other timestamps in this feed are
+        # genuinely UTC and keep using _epoch_or_iso.
+        d.next_charge_timer_start_at = _local_wallclock(_ncs)
     _ncf = first(
         "profile_state_report.next_charging_timer_information.estimated_finish_time",
         "next_charging_timer_information.estimated_finish_time",
         "estimated_finish_time",  # v2.15.4: unique bare leaf — safe alias.
     )
     if _ncf is not None and d.next_charge_timer_finish_at is None:
-        d.next_charge_timer_finish_at = _epoch_or_iso(_ncf)
+        # #1903 — stated as local wall-clock, not UTC. See
+        # _local_wallclock; the other timestamps in this feed are
+        # genuinely UTC and keep using _epoch_or_iso.
+        d.next_charge_timer_finish_at = _local_wallclock(_ncf)
     _ncr = first(
         "profile_state_report.next_charging_timer_information.target_reachability",
         "next_charging_timer_information.target_reachability",

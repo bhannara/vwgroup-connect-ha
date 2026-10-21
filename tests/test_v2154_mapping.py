@@ -82,8 +82,35 @@ def test_518_plug_junk_sentinel_dropped() -> None:
 # ── #521/#522 — next-charging-timer, slope consumption, report_type
 
 
-def test_521_next_charge_timer_iso_passthrough() -> None:
-    # estimated_start/finish are dict type=string ISO timestamps → passthrough.
+def _timer_wallclock(value: str) -> tuple[int, int]:
+    """The (hour, minute) a charge-timer value states, with its zone ignored.
+
+    #1903 — these two fields are the car's local wall-clock time, so the
+    offset in the output is the MACHINE's and differs between a developer's
+    laptop and CI. Asserting the digits keeps the test meaningful in any zone;
+    asserting the string would have passed only where the author happened to
+    sit.
+    """
+    from datetime import datetime
+
+    parsed = datetime.fromisoformat(value)
+    assert parsed.tzinfo is not None, (
+        "a naive value is read as UTC by every consumer; see #1903"
+    )
+    return parsed.hour, parsed.minute
+
+
+def test_521_next_charge_timer_is_read_as_local_wallclock() -> None:
+    """Renamed from ...iso_passthrough, because pass-through turned out to be
+    the bug rather than the contract.
+
+    #1903 — @keylogicjohan measured these two fields against his charger's own
+    session log and they are the car's LOCAL wall-clock time carrying a ``Z``,
+    so passing the ``Z`` through made every consumer two hours late in his
+    zone. What this test still pins is the half that was always right: both
+    fields populate, and the reading itself is preserved. What it no longer
+    pins is the suffix.
+    """
     d = _map(
         {
             "profile_state_report.next_charging_timer_information."
@@ -92,8 +119,8 @@ def test_521_next_charge_timer_iso_passthrough() -> None:
             "estimated_finish_time": "2026-07-02T05:30:00Z",
         }
     )
-    assert d.next_charge_timer_start_at == "2026-07-01T22:00:00Z"
-    assert d.next_charge_timer_finish_at == "2026-07-02T05:30:00Z"
+    assert _timer_wallclock(d.next_charge_timer_start_at) == (22, 0)
+    assert _timer_wallclock(d.next_charge_timer_finish_at) == (5, 30)
 
 
 def test_537_next_charge_timer_number_dotted() -> None:
