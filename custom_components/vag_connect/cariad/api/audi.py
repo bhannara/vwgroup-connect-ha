@@ -60,6 +60,14 @@ class AudiClient(VWEUClient):
         CariadBaseClient.__init__(self, session, BRAND_AUDI, email, password, spin)
         self._azs_token: str | None = None
 
+    def _azs_token_url(self) -> str:
+        """Audi authorization-server proxy; regional subclasses override."""
+        return _AZS_TOKEN_URL
+
+    def _engine_base(self) -> str:
+        """Audi remote-engine endpoint base; regional subclasses override."""
+        return _ENGINE_BASE
+
     async def _exchange_azs_token(self) -> str | None:
         """Exchange IDK access_token for AZS (Audi portal) token.
 
@@ -69,7 +77,7 @@ class AudiClient(VWEUClient):
         """
         try:
             async with self._session.post(
-                _AZS_TOKEN_URL,
+                self._azs_token_url(),
                 json={
                     "token":      self._access_token,
                     "grant_type": "id_token",
@@ -129,7 +137,7 @@ class AudiClient(VWEUClient):
         # Step 1 — proof. Response is read at the top level: {"userPromptProof": "..."}.
         proof_resp: Any = await self._request(
             "PUT",
-            f"{_ENGINE_BASE}/{vin_u}/userpromptproof",
+            f"{self._engine_base()}/{vin_u}/userpromptproof",
             json={"spin": pin},
         )
         secured = (
@@ -142,7 +150,7 @@ class AudiClient(VWEUClient):
             )
         # Step 2 — start. Body uses the proof token from step 1.
         await self._post(
-            f"{_ENGINE_BASE}/{vin_u}/start",
+            f"{self._engine_base()}/{vin_u}/start",
             json={"securedActivationData": secured, "spin": pin},
         )
 
@@ -153,7 +161,7 @@ class AudiClient(VWEUClient):
         required (mirrors upstream PR #717).
         """
         vin_u = vin.upper()
-        await self._post(f"{_ENGINE_BASE}/{vin_u}/stop")
+        await self._post(f"{self._engine_base()}/{vin_u}/stop")
 
     async def fetch_images(self) -> None:
         """Override: exchange IDK→AZS token, call app-api.live-my.audi.com."""
