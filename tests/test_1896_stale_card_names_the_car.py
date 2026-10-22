@@ -112,14 +112,31 @@ def test_the_label_matches_the_device_page() -> None:
 
 
 def test_the_coordinator_passes_a_label_built_from_that_helper() -> None:
-    """Checked against the source: the call site must not grow its own naming."""
+    """Checked against the source: the call site must not grow its own naming.
+
+    This asserted ``"car=_device_name(data" in src`` until @starwarsfan
+    checked the shipped result and found it still wrong — so the assertion was
+    pinning the defect rather than the fix. Two things were wrong with routing
+    the card straight through ``_device_name``: it never consults the device
+    registry, so a car the owner renamed was called something else; and it
+    read the VIN out of the snapshot, which on a thin one is missing, leaving
+    the bare brand label. Both are why ``_car_label`` exists.
+
+    The assertion is kept, aimed at the helper that is now correct, because
+    the original intent still holds: the call site must not grow its own
+    naming logic.
+    """
     import inspect
 
     from custom_components.vag_connect import coordinator as _coord
 
     src = inspect.getsource(_coord)
-    assert "car=_device_name(data" in src, (
-        "the stale-data repair stopped naming the car through _device_name"
+    assert "car=self._car_label(" in src, (
+        "the stale-data repair stopped naming the car through _car_label"
+    )
+    assert "car=_device_name(data" not in src, (
+        "the card is naming the car from the snapshot again, which ignores a "
+        "rename and degrades to the brand label when the snapshot is thin"
     )
 
 
