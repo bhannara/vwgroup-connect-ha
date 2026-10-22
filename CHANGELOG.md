@@ -87,6 +87,39 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   removing its real guard passed as well. Proximity is not containment.
   ([#1921](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1921))
 
+- **The "vehicle data hasn't refreshed" card now uses the name you gave the
+  car.** @starwarsfan checked the previous fix on v5.1.1 and found it still
+  wrong, in two ways, and he was right about both
+  ([#1896](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1896)).
+
+  **It ignored your rename.** The card was routed through the helper that
+  builds a device name out of data — brand plus model, or brand plus the last
+  six VIN characters — and that helper never consults Home Assistant's device
+  registry. Renaming a device is an explicit statement about what the car is
+  called, so a card that then calls it something else reintroduces the very
+  "which car does this mean" problem it was built to solve. A name you set now
+  wins over anything derived.
+
+  **And on his car it fell through to the bare brand label**, `Audi (myAudi)`,
+  which is what that helper returns when it has neither a model nor a VIN to
+  work with. The VIN *was* known — it is what raised the card — but the call
+  handed over the vehicle snapshot instead of the VIN, and on a snapshot that
+  has gone thin the key is missing. The VIN is passed explicitly now, so the
+  last-six fallback is always available.
+
+  The registry lookup is wrapped: naming a car is a courtesy, the warning is
+  the point, and a registry that cannot be read costs the nicer name rather
+  than the card.
+
+  **The previous close was wrong on its own terms**, and that is worth saying
+  here rather than only in the thread. It described the design; his screenshot
+  showed the implementation. The test that came with it asserted the card was
+  named through the data helper — so it was pinning the defect, which is why
+  nothing failed. That assertion now points at the corrected helper.
+
+  Eight mutations, each breaking one part and asserting the named test catches
+  it — including the two shapes of the original fault and a registry error
+  being allowed to suppress the warning.
 - **The service calendar showed nothing, on every brand, since it was built.**
   *Service due* and *Oil service due* have never rendered for anybody.
   @nijaobscvra666 reported it on a CUPRA Leon and did not stop at the symptom —
