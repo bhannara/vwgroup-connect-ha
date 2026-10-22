@@ -161,6 +161,43 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   calendar has no writer anywhere, so it can never fire
   ([#1925](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1925)).
 
+- **The "data outdated" indicator could not report a frozen feed, which is the
+  only thing it is for.** On an entry whose feed had stopped, it kept reading
+  *no* — indefinitely
+  ([#1920](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1920)).
+
+  The verdict was decided in one place, during enrichment, and enrichment only
+  runs on a poll that actually brought data back. Five separate paths
+  republish the previous snapshot when a poll brings nothing — a failed poll,
+  an empty one, a parse failure, an unexpected result shape, and a setup read
+  that returned nothing — and every one of them carried the old verdict along
+  with the old data. It also reached the on-disk store, because only keys
+  beginning with an underscore are stripped before saving, so a restart read
+  back a verdict the new session had never computed.
+
+  Put together: a *not outdated* verdict decided while the data was still
+  fresh could be saved, restored, and held through every empty read
+  afterwards. @Mex-ai11's entry (#1851) served a nine-day-old snapshot while
+  reporting itself fine, and the indicator meant to catch exactly that said
+  nothing.
+
+  The verdict is now re-decided wherever a snapshot is republished, including
+  on load. That needs no fresh poll — the capture stamp is carried forward, so
+  the age is knowable and the answer is true *now* rather than true when the
+  data was last read.
+
+  **One exemption deliberately does not apply here.** A stamp that reads old
+  while the readings underneath it keep changing is not a frozen feed, and
+  that case is excused during enrichment. On a republish nothing has changed
+  by definition, so carrying the exemption across would answer "is this stale"
+  with "it was not, last time".
+
+  Eight mutations, each breaking one part. Two of the tests were wrong first
+  and the mutation check is what said so — one accepted any mention of the
+  re-decide anywhere in the enclosing function, and that function is 934 lines
+  long with two such calls in it, so deleting the one being tested passed on
+  the other.
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed

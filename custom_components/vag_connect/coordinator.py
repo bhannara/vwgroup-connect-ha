@@ -1822,6 +1822,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         restored = dict(vdata)
                         restored["_restored"] = True
                         restored["_poll_failed"] = False
+                        self._redecide_stale(restored)
                         self.vehicles[vin] = restored
                         _restored_vins.append(vin)
             # #6 — seed the last-known-good time from the snapshot's own save
@@ -2232,6 +2233,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     # through, so a brand-new car appears on first setup.
                     if no_data and self.vehicles.get(vin):
                         self.vehicles[vin]["_poll_failed"] = True
+                        self._redecide_stale(self.vehicles[vin])
                         if hasattr(self, "vehicle_success"):
                             self.vehicle_success[vin] = False
                         _LOGGER.debug(
@@ -5041,6 +5043,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         _LOGGER.debug("Poll failed for %s: %s", mask_vin(vin), type(result).__name__)
                         old = self.vehicles.get(vin, {})
                         old["_poll_failed"] = True
+                        self._redecide_stale(old)
                         fresh[vin] = old
                         self.vehicle_success[vin] = False
                         self.vehicle_failure_count[vin] = (
@@ -5144,6 +5147,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                             else:
                                 old = self.vehicles.get(vin, {})
                                 old["_poll_failed"] = True
+                                self._redecide_stale(old)
                                 fresh[vin] = old
                                 self.vehicle_success[vin] = False
                                 self.vehicle_failure_count[vin] = (
@@ -5176,6 +5180,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                             )
                             old = self.vehicles.get(vin, {})
                             old["_poll_failed"] = True
+                            self._redecide_stale(old)
                             fresh[vin] = old
                             self.vehicle_success[vin] = False
                             self.vehicle_failure_count[vin] = (
@@ -5270,7 +5275,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         except Exception:  # noqa: BLE001
                             pass
                     else:
-                        fresh[vin] = self.vehicles.get(vin, {})
+                        fresh[vin] = self._redecide_stale(self.vehicles.get(vin, {}))
                         self.vehicle_success[vin] = False
                         self.vehicle_failure_count[vin] = (
                             self.vehicle_failure_count.get(vin, 0) + 1
@@ -6026,6 +6031,53 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             if chosen:
                 return chosen
         return _device_name({**data, "vin": vin}, self.entry.data.get("brand", "vag"))
+
+    def _stale_threshold_s(self) -> int:
+        """How old a capture may get before the feed counts as frozen.
+
+        The same figure ``_enrich`` uses, lifted out so the verdict can be
+        re-decided without re-running the enrichment.
+        """
+        from .repairs import STALE_DATA_MIN_AGE_S  # noqa: PLC0415
+
+        interval_s = max(
+            int(
+                self.entry.options.get(CONF_SCAN_INTERVAL)
+                or self.entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+            )
+            * 60,
+            _CC_MIN_INTERVAL_S,
+        )
+        return max(STALE_DATA_MIN_AGE_S, 8 * interval_s)
+
+    def _redecide_stale(self, vehicle: dict[str, Any]) -> dict[str, Any]:
+        """Re-decide ``data_stale`` on a snapshot that is being republished.
+
+        The verdict is computed in exactly one place — ``_enrich`` — and
+        ``_enrich`` only runs on a poll that parsed vehicle data. Every path
+        that republishes the previous snapshot instead used to carry the old
+        verdict with it, and ``strip_runtime`` keeps every key without a
+        leading underscore, so it was written to disk and read back on load
+        too. The result was the failure this guards against (#1920): a *not
+        stale* verdict decided while the data was still fresh, saved,
+        restored, and held through every empty read afterwards — so the one
+        indicator whose job is to report a frozen feed could read "no"
+        indefinitely. @Mex-ai11's entry served a nine-day-old snapshot while
+        reporting itself fine (#1851).
+
+        Deciding it needs no fresh poll. The capture stamp is carried forward
+        and the age is measured against it, so a republished snapshot gets a
+        verdict that is true *now* rather than true when it was last read.
+
+        There is no "values moved" exemption here, deliberately. That
+        exemption (#1688) exists because a stamp can read old while readings
+        change underneath it — but on a republish nothing has changed by
+        definition, so applying it would be a way of answering "is this
+        stale" with "it was not, last time".
+        """
+        age = _capture_age_s(vehicle)
+        vehicle["data_stale"] = None if age is None else age >= self._stale_threshold_s()
+        return vehicle
 
     def _active_vins(self, vins: list[str]) -> list[str]:
         """Drop VINs whose HA device *the user* disabled, so a deactivated
