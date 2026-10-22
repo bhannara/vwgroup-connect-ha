@@ -5991,6 +5991,42 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             return found
         return registry.async_get_device(identifiers={(DOMAIN, vin)})
 
+    def _car_label(self, vin: str, data: dict) -> str:
+        """What to call this car when telling the user about it.
+
+        **The name the user gave it wins.** Renaming a device in Home Assistant
+        is an explicit statement about what the car is called, and a card that
+        then calls it something else reintroduces exactly the "which car does
+        this mean" problem it was meant to solve. @starwarsfan reported the
+        card reading ``Audi (myAudi)`` on a car he had named himself (#1896),
+        after a first fix that routed the card through the device-name helper
+        without ever consulting the registry — so the rename was invisible to
+        it.
+
+        The fallback is the derived device name, and the VIN is passed in
+        explicitly rather than taken from the snapshot. ``_device_name`` reads
+        ``vehicle["vin"]`` for its last-six fallback, and on a snapshot that
+        has gone thin that key can be missing — which is the second half of
+        what he saw: with neither a model nor a VIN to work with, the helper
+        returns the bare brand label. The VIN is known here; it is what raised
+        the card.
+        """
+        from .entity_base import _device_name  # noqa: PLC0415
+
+        try:
+            registry = dr.async_get(self.hass)
+            device = self._lookup_own_device(registry, vin)
+        except Exception:  # noqa: BLE001
+            # Naming a car must never be the reason a repair card fails to
+            # appear. A registry that cannot be read costs the nicer name,
+            # not the warning.
+            device = None
+        if device is not None:
+            chosen = (device.name_by_user or "").strip()
+            if chosen:
+                return chosen
+        return _device_name({**data, "vin": vin}, self.entry.data.get("brand", "vag"))
+
     def _active_vins(self, vins: list[str]) -> list[str]:
         """Drop VINs whose HA device *the user* disabled, so a deactivated
         vehicle stops being polled and stops consuming the daily request budget.
@@ -7744,12 +7780,10 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # says only "***022149" is unactionable on a two-car account:
                 # the reporter had an Audi and a Škoda and could not tell which
                 # one it meant without looking the VIN up.
-                from .entity_base import _device_name  # noqa: PLC0415
-
                 raise_issue_stale_data(
                     self.hass, self.entry.entry_id, _vin_sd,
                     masked_vin=mask_vin(_vin_sd), age_hours=int(_age // 3600),
-                    car=_device_name(data, self.entry.data.get("brand", "vag")),
+                    car=self._car_label(_vin_sd, data),
                 )
             else:
                 clear_stale_data_issue(self.hass, self.entry.entry_id, _vin_sd)
