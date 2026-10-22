@@ -288,18 +288,34 @@ def test_the_body_says_how_many_changes_the_long_form_covers() -> None:
 
 
 def test_the_short_body_is_actually_short() -> None:
-    """A ratio rather than a character bound, so it scales with the release
-    instead of needing a new magic number every cycle.
+    """The change list must not grow with the *detail* of the entries, only
+    with their count.
 
-    v5.1.0's verbatim body was 44 681 characters; the same content through this
-    builder is a few thousand. Anything above a quarter of the section length
-    means the short form has started growing back into the long one.
+    The first version of this compared the WHOLE body against the section and
+    it was wrong in a way that only a small release exposes. The body carries a
+    fixed header, changelog link and footer that do not shrink with the
+    section — measured at 570, 602 and 641 characters against sections of
+    2 350, 26 814 and 42 259. On a section with many entries that overhead
+    disappears into the ratio; on a one-entry section it is most of the body,
+    so the gate failed on the release that was *most* summarised. It had
+    passed until then only because every section it had ever seen was large.
+
+    What actually encodes "this is a summary" is the change list itself.
     """
     heading, section = _newest_section_with_entries()
     body = brn.build(_changelog(), "9.9.9", heading)
-    assert len(body) < len(section) / 4, (
-        f"short body is {len(body)} chars against a {len(section)}-char "
-        "section — it is no longer a summary"
+    changes = [ln for ln in body.splitlines() if ln.startswith("- ")]
+    change_chars = sum(len(ln) for ln in changes)
+    assert change_chars < len(section) / 4, (
+        f"the change list is {change_chars} chars against a {len(section)}-char "
+        f"section across {len(changes)} entries — the lines have started "
+        "carrying the paragraphs instead of summarising them"
+    )
+    # and the fixed part stays fixed, so the footer cannot quietly balloon
+    overhead = len(body) - change_chars
+    assert overhead < 1200, (
+        f"the body's non-change part is {overhead} chars; it has been ~600 "
+        "and is meant to be a header, a link and a footer"
     )
 
 
@@ -479,11 +495,23 @@ def test_both_paths_behave_as_designed_when_actually_run() -> None:
         for ln in match.group(1).split("\n")
     )
 
-    heading, _ = _newest_section_with_entries()
-    if heading == "Unreleased":
-        pytest.skip("no released section to drive the happy path against")
-
+    # The newest RELEASED section, not simply the newest one with entries.
+    # Using the latter made this skip itself whenever anything was unreleased —
+    # which is most of the time, and it is the strongest test in the file. The
+    # happy path needs a heading the workflow would actually look up at tag
+    # time, and a version heading is exactly that.
     changelog = _changelog()
+    heading = next(
+        (
+            name
+            for name in _HEADINGS.findall(changelog)
+            if re.fullmatch(r"\d+\.\d+\.\d+", name)
+            and brn.split_entries(brn.section_for(changelog, name))
+        ),
+        None,
+    )
+    assert heading is not None, "no released section with entries to drive"
+
     results = {}
     for label, version in (("happy", heading), ("degraded", "9.9.9")):
         work = pathlib.Path(tempfile.mkdtemp())
