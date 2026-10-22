@@ -1836,6 +1836,26 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 "for %s", len(self.vehicles), brand,
             )
 
+            # The sweep v4.12.0's changelog promised and never shipped. A
+            # repair id carrying a raw VIN survives the upgrade that stopped
+            # new ones being created, because the only deletes live inside the
+            # raise and clear of that same repair — neither of which fires for
+            # an export parked in "timed_out". Restored VINs are exactly the
+            # ones that can still hold such a card, so this is where it runs.
+            try:
+                from .repairs import (  # noqa: PLC0415
+                    sweep_legacy_raw_vin_issues,
+                )
+
+                sweep_legacy_raw_vin_issues(
+                    self.hass, self.entry.entry_id, list(self.vehicles.keys())
+                )
+            except Exception:  # noqa: BLE001
+                # Tidying old cards must never be the reason an entry fails to
+                # set up. The leak is bad; an integration that will not start
+                # is worse, and the card stays deletable by hand either way.
+                _LOGGER.debug("legacy repair-id sweep skipped", exc_info=True)
+
         # b13 — setup flags an entry when the user asked for MBB commands but
         # the command channel could not be minted (the portal entry was created
         # read-only). Surface a clear repair so it's a known limit, not a

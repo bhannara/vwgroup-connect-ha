@@ -198,6 +198,40 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   long with two such calls in it, so deleting the one being tested passed on
   the other.
 
+- **A repair card could still be carrying your full VIN, and the fix that was
+  supposed to clear it never ran.** If you have ever shared a diagnostics file
+  from this integration publicly, this one is worth reading.
+
+  A Home Assistant repair's internal id goes verbatim into Home Assistant's own
+  config-entry diagnostics — a place this integration's VIN redaction never
+  sees, as the code has said in a comment since the problem was first found.
+  One card built its id from the unmasked VIN. That was fixed for **new** cards
+  in v4.12.0, and the changelog said any older card "is cleared on upgrade so
+  nothing lingers".
+
+  **It was not.** The deletion sat inside the raising and clearing of that same
+  card, so it only ran when the card was next raised or cleared — and for an
+  export that has already timed out, neither ever happens again. The card
+  raised before the upgrade simply stayed, through every version since.
+
+  This is not a theory: someone running a version two releases past that "fix"
+  attached a diagnostics file to a public issue, and it still carried the full
+  seventeen characters.
+
+  There is now a one-shot sweep at startup that deletes those ids for every car
+  the entry knows. It is deliberately limited to the one card with the gap —
+  its sibling clears itself on the next poll, so sweeping that one too would be
+  code that never does anything, and a test says so rather than a comment.
+
+  **What this does not do:** it cannot reach a file you have already uploaded
+  somewhere. If you have shared a diagnostics file publicly, replacing it is
+  still the only thing that removes what is already out there.
+
+  The v4.12.0 entry above now carries a correction, because a changelog that
+  tells people their data was cleaned when it was not is worse than one that
+  says nothing.
+  ([#1768](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1768))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed
@@ -1816,6 +1850,13 @@ VW app 4.6.4 is supported (gszigethy/vwgroup-connect-ha#28, gszigethy/vwgroup-co
 - **A diagnostics download could carry more vehicle identification than it should.** Tightened, and
   any card created before this update is cleared on upgrade so nothing lingers. If you have already
   shared a diagnostics file publicly, consider replacing it (#1768, thanks @kalwados).
+  > **Correction, 2026-10-23.** The second sentence was wrong. New cards stopped
+  > carrying a raw VIN, but **an existing card was not cleared on upgrade** — the
+  > deletion only ran when that same repair was next raised or cleared, and for an
+  > export already timed out neither ever happens. A user two releases later
+  > uploaded a diagnostics file that still carried one. The sweep this promised
+  > ships in the entry under `[Unreleased]`. If you shared a diagnostics file
+  > before that version, replacing it is still worth doing.
 - **A Škoda API key you typed in yourself is no longer thrown away when another car enrols
   automatically.** Arming the official channel from the stored keys replaced it with only the
   automatic ones, so a car that depended on the key you entered quietly lost its backup
