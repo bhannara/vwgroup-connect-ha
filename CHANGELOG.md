@@ -87,6 +87,47 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   removing its real guard passed as well. Proximity is not containment.
   ([#1921](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1921))
 
+- **The service calendar showed nothing, on every brand, since it was built.**
+  *Service due* and *Oil service due* have never rendered for anybody.
+  @nijaobscvra666 reported it on a CUPRA Leon and did not stop at the symptom —
+  he found the cause at the line, and he was right
+  ([#1923](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1923)).
+
+  The calendar's date parser accepted only strings, and **no writer in the
+  integration produces a string for those two fields**. Every one of them —
+  Škoda, SEAT/CUPRA, Volkswagen EU and the EU Data Act parser — stores an
+  integer day count, because that is what the backends send and what the
+  day-counter sensors read. So both events were dropped on every brand and
+  both channels. The other seven events on that calendar were fine; their
+  writers already convert at the source.
+
+  It presented as an **empty** calendar rather than a missing one, which is
+  why it survived so long: the setup gate only asks whether a service field is
+  truthy, and a day count is, so the entity was created and then everything in
+  it was discarded.
+
+  The parser now takes day counts as well as dates, guards bools (`True` would
+  have meant tomorrow) and rejects the sentinel integers backends ship inside
+  error envelopes, where `-2147483648` would otherwise have become a calendar
+  entry 5.8 million years in the past.
+
+  **One decision worth recording, because it is invisible except for a few
+  minutes around midnight.** Three places in the integration convert a day
+  count to a date and all three anchor differently: `cariad/_util.py` on UTC
+  midnight, the sensors on the machine's own zone, and the calendar on Home
+  Assistant's configured zone. The calendar keeps its own, so it agrees with
+  itself; making all three agree is a separate change with a wider blast
+  radius.
+
+  **Why this reached a reporter instead of a test**: the test that covers this
+  fed the parser `"2026-12-01"` — a shape nothing in the integration produces.
+  It was green, had always been green, and asserted a case that cannot occur.
+  It now drives day counts, and the regression has its own tests alongside.
+
+  Found in the same reading and not fixed here: the **HU/TÜV** entry on that
+  calendar has no writer anywhere, so it can never fire
+  ([#1925](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1925)).
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed

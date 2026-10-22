@@ -54,7 +54,48 @@ def _parse_dt(val: Any) -> datetime | None:
 
 
 def _parse_date(val: Any) -> date | None:
-    """Parse a date (or the date part of an ISO datetime). None on failure."""
+    """Parse a date from the shapes the writers actually produce.
+
+    This used to accept only strings, and **no writer in the integration ever
+    produces a string for the two service fields**: ``service_due_at`` and
+    ``oil_service_at`` are stored as integer day counts by every one of them
+    (``seat_cupra``, ``skoda``, ``vw_eu`` and the EU Data Act parser), which is
+    what the backends send and what the day-counter sensors read. So *Service
+    due* and *Oil service due* were dropped on every brand and both channels,
+    for as long as the calendar has existed (#1923, reported and diagnosed by
+    @nijaobscvra666).
+
+    The symptom was an empty calendar rather than a missing one, because the
+    setup gate only asks whether a service field is truthy and a day count is.
+
+    ``dt_util.now().date()`` is the anchor, deliberately, because that is what
+    this module already uses for "today" in ``_all_events``. Two notions of
+    today inside one file would be worse than the few lines of duplication it
+    costs: ``days_or_date_to_iso`` in ``cariad/_util.py`` does the same job but
+    anchors on UTC midnight, and ``sensor.py`` anchors on the system zone
+    rather than Home Assistant's configured one. Those three disagree by up to
+    a day near midnight; aligning them is a separate change with its own blast
+    radius, and the calendar agreeing with itself comes first.
+    """
+    # Bools are an int subclass, so True would otherwise read as "tomorrow".
+    if isinstance(val, bool):
+        return None
+    # datetime before date: datetime is a subclass of date.
+    if isinstance(val, datetime):
+        return val.date()
+    if isinstance(val, date):
+        return val
+    if isinstance(val, (int, float)):
+        try:
+            days = int(val)
+        except (OverflowError, ValueError):
+            return None
+        # ~100 years either way. Backends ship sentinel integers such as
+        # -2147483648 inside error envelopes, and a calendar event 5.8 million
+        # years out is not a date, it is a parse failure wearing one.
+        if not -36500 <= days <= 36500:
+            return None
+        return dt_util.now().date() + timedelta(days=days)
     if not isinstance(val, str) or len(val) < 10:
         return None
     try:
