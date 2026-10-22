@@ -8,6 +8,8 @@ from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from homeassistant.util import dt as dt_util
+
 from custom_components.vag_connect.cariad._util import mask_vin
 from custom_components.vag_connect.const import DOMAIN
 from custom_components.vag_connect.update import VagUpdateEntity
@@ -114,19 +116,41 @@ def test_calendar_parse_helpers() -> None:
     assert _parse_date("2026-09-01") == date(2026, 9, 1)
     assert _parse_date("2026-09-01T00:00:00Z") == date(2026, 9, 1)
     assert _parse_date("bad") is None
+    # The shape real cars actually deliver. Every writer stores these two
+    # fields as an integer day count, so exercising only strings here is what
+    # let #1923 reach a reporter instead of CI.
+    assert _parse_date(0) == dt_util.now().date()
+    assert _parse_date(180) == dt_util.now().date() + timedelta(days=180)
 
 
 def test_service_calendar_builds_all_day_events() -> None:
+    # Day counts, not ISO strings. This test fed "2026-12-01" and
+    # "2026-11-15T00:00:00Z" until #1923, and **no writer in the integration
+    # produces a string for either field** — so it was green against a case
+    # that cannot occur while both events were silently dropped in production.
     e = _entity(VagServiceCalendar, {
-        "service_due_at": "2026-12-01",
-        "oil_service_at": "2026-11-15T00:00:00Z",
+        "service_due_at": 180,
+        "oil_service_at": 24,
     })
     evs = e._all_events()
     summaries = {ev.summary for ev in evs}
     assert "Service due" in summaries and "Oil service due" in summaries
     svc = next(ev for ev in evs if ev.summary == "Service due")
+    expected = dt_util.now().date() + timedelta(days=180)
+    assert svc.start == expected
+    assert svc.end == expected + timedelta(days=1)  # all-day: end exclusive
+
+
+def test_service_calendar_still_accepts_date_strings() -> None:
+    """The string path stays. Nothing writes one today, but the field is typed
+    ``Any`` and a future parser may well hand over an ISO date — dropping the
+    old shape while fixing the new one would just move the bug."""
+    e = _entity(VagServiceCalendar, {
+        "service_due_at": "2026-12-01",
+        "oil_service_at": "2026-11-15T00:00:00Z",
+    })
+    svc = next(ev for ev in e._all_events() if ev.summary == "Service due")
     assert svc.start == date(2026, 12, 1)
-    assert svc.end == date(2026, 12, 2)  # all-day: end exclusive
 
 
 def test_service_calendar_includes_subscription_expiry() -> None:
