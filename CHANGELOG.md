@@ -286,6 +286,46 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   [#1933](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1933),
   [#1915](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1915))
 
+- **A refusal the integration had already explained was still logged as "cause
+  unknown", one line above the explanation.** @panther7's log had both halves
+  side by side and they disagreed:
+
+  > `command_unlock(***) classified as unknown`
+  > `command_unlock(***) failed: … the car's gateway accepted your S-PIN and
+  > then refused this integration's client identity for commands. This is not
+  > your password, your S-PIN or your subscription — all three checked out.`
+
+  The sentence was right; it comes from the code that read the gateway's
+  answer. The classification beside it was wrong. The gateway's refusal is
+  wrapped in an error type that carries no response body, and the classifier
+  gave up on anything shaped like that before looking at what the error
+  actually held — while the code that raised it had worked the cause out four
+  lines earlier and kept only the prose.
+
+  Both measured refusals now carry their cause as well as their wording, so
+  the two lines agree. **Be clear about what this buys:** the log stops
+  contradicting itself. Nothing in the integration reads these recorded
+  reasons, so by itself this changes no behaviour, and the refusal it describes
+  is still the car's answer — for @panther7 there is nothing to fix at his end.
+
+  **What it deliberately does not do, which took longer to decide than the
+  fix.** The obvious home for "the gateway refused our client identity" was the
+  existing device-attestation reason, whose description reads almost like the
+  message above. That reason is also one of three that mark a control
+  unavailable for twenty-four hours. Using it would have taken his Lock button
+  offline for a day in order to correct a log line, on a car whose controls are
+  visible today. So the measured cause gets a reason of its own that records it
+  and touches nothing, and whether a structurally refused command *should*
+  disappear from the dashboard is left as the separate question it is.
+
+  The reason list itself said the opposite of the code on this point — three
+  reasons were documented as leaving the entity alone while in fact marking it
+  unavailable, with nothing logged to say why — so it now states which ones
+  change what you see. That documentation error is what nearly produced the
+  regression above, and correcting it is probably worth more than the fix it
+  accompanies.
+  ([#584](https://github.com/its-me-prash/vwgroup-connect-ha/issues/584))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed
