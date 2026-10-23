@@ -118,8 +118,8 @@ class CommandFailureReason(StrEnum):
       feature in the manufacturer backend (e.g. CUPRA Born without
       honk-and-flash). Hide the entity at next reload.
     - ``SUBSCRIPTION_EXPIRED`` — paid online-services subscription expired.
-      Same vehicle would support the command if the user renewed; surface
-      a clear error, do NOT hide the entity.
+      Same vehicle would support the command if the user renewed.
+      **Marks the control unavailable for 24 h** (see the warning below).
     - ``NOT_ENTITLED`` — free tier (e.g. We Connect Go) that never
       included remote commands. Same handling as expired but with
       different user messaging.
@@ -137,7 +137,36 @@ class CommandFailureReason(StrEnum):
       can't satisfy. Distinct from NOT_ENTITLED: it's NOT a subscription
       problem, so messaging must not send users chasing a phantom renewal.
       Commands are gone on this channel; reads continue via the portal.
+      **Marks the control unavailable for 24 h** (see the warning below).
+    - ``CLIENT_IDENTITY_REFUSED`` — the vehicle's gateway accepted the S-PIN
+      and then refused THIS client's identity for commands: the licence is
+      active, the operation is granted, the PIN handshake completed, and the
+      command is still refused because some cars only accept commands from
+      the manufacturer's own app. Deliberately NOT folded into
+      ``ATTESTATION_LOCKED``: that member names a Google/AWS device-attestation
+      challenge, this is a legacy grant gap, and — the operative difference —
+      ``ATTESTATION_LOCKED`` marks the control unavailable while this one does
+      not. Recorded so the log stops saying "unknown" about a cause that was
+      measured; changing availability on the strength of it is a separate
+      decision that nobody has taken.
     - ``UNKNOWN`` — default. Don't make assumptions.
+
+    **Which of these change what the user sees.** Three of them do, and the
+    bullets above said the opposite until this was checked against the code.
+    ``record_command_failure`` has exactly two flag-flipping branches:
+    ``MISSING_CAPABILITY`` sets ``supported_by_vehicle = False``, and
+    ``SUBSCRIPTION_EXPIRED`` / ``NOT_ENTITLED`` / ``ATTESTATION_LOCKED``
+    together set ``entitled_by_account = False``. Either flag makes
+    ``is_command_known_unsupported`` return True, which an entity turns into
+    ``available = False``. The entity is not deleted and a ``retry_after``
+    re-probes in 24 hours, which is what "do NOT hide the entity" was reaching
+    for — but for a day the control reads as Unavailable, with nothing logged
+    to say why.
+
+    Every other member only records ``last_error`` and ``last_error_at``, and
+    nothing in the integration reads ``last_error`` at all. So picking a member
+    is a choice about AVAILABILITY first and about the log second: reuse one of
+    those three and a working control goes dark for a day.
     """
 
     MISSING_CAPABILITY = "missing_capability"
@@ -149,6 +178,7 @@ class CommandFailureReason(StrEnum):
     INVALID_PAYLOAD = "invalid_payload"
     BACKEND_ERROR = "backend_error"
     ATTESTATION_LOCKED = "attestation_locked"
+    CLIENT_IDENTITY_REFUSED = "client_identity_refused"
     UNKNOWN = "unknown"
 
 
@@ -183,6 +213,24 @@ def classify_command_failure(exc: BaseException) -> CommandFailureReason:
     # "S-PIN required", not an UNKNOWN crash that bubbles as a raw traceback.
     if isinstance(exc, SpinError):
         return CommandFailureReason.SPIN_REQUIRED
+    # #584 (@panther7) — an error that already carries the verdict its raiser
+    # measured is believed, and believed ABOVE the APIError gate below for the
+    # same reason SpinError is: the gate exists to stop us guessing from a body
+    # we have not got, and a carried verdict is not a guess.
+    #
+    # His log had the two halves disagreeing — "classified as unknown" directly
+    # above a sentence naming the cause — because the gateway refusal is wrapped
+    # in a VehicleCommandError, which is not an APIError and carries no body, so
+    # this function returned UNKNOWN before looking at anything the exception
+    # held. The raiser had computed the cause and then kept only the prose.
+    #
+    # Checked by type and not by ``getattr``: an arbitrary exception could carry
+    # an unrelated ``failure_reason`` attribute, and the isinstance on the value
+    # keeps a stray string from being returned where callers expect a member.
+    if isinstance(exc, VehicleCommandError):
+        _carried = exc.failure_reason
+        if isinstance(_carried, CommandFailureReason):
+            return _carried
     if not isinstance(exc, APIError):
         return CommandFailureReason.UNKNOWN
 
@@ -702,12 +750,29 @@ class VehicleNotFoundError(CariadError):
 class VehicleCommandError(CariadError):
     """Remote command rejected or timed out."""
 
-    def __init__(self, command: str, reason: str = "") -> None:
+    def __init__(
+        self,
+        command: str,
+        reason: str = "",
+        *,
+        failure_reason: CommandFailureReason | None = None,
+    ) -> None:
         msg = f"Command '{command}' failed"
         if reason:
             msg += f": {reason}"
         super().__init__(msg)
         self.command = command
+        #: #584 (@panther7) — the machine-readable twin of the prose below.
+        #: ``classify_command_failure`` used to bail out to ``UNKNOWN`` for any
+        #: exception that is not an ``APIError``, and this class is not one, so
+        #: a refusal whose cause had ALREADY been measured was filed as "cause
+        #: unknown" — and his log showed the two statements side by side:
+        #: "command_unlock(***) classified as unknown" directly above a sentence
+        #: naming the cause exactly. The prose was right; the enum was wrong.
+        #: Left as None by every raiser that genuinely does not know. Setting it
+        #: to a member that marks the control unavailable is a decision about
+        #: AVAILABILITY, not about logging — see ``CommandFailureReason``.
+        self.failure_reason = failure_reason
         #: #584 (@Joassens) — the reason, kept separately so the coordinator can
         #: put it in the LOG as well as in the error Home Assistant surfaces.
         #: It used to log the exception's class and HTTP status only, with a
