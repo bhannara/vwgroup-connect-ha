@@ -232,6 +232,50 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   says nothing.
   ([#1768](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1768))
 
+- **A VW outage was reported as your data request being missing — and that
+  advice made people delete working requests.** On 2026-10-22 Volkswagen let
+  the EU Data Act portal's TLS certificate expire at 23:59:59 UTC. From
+  midnight the portal could not be reached at all; it was measured still
+  expired at 07:11 UTC and valid again by 08:25 UTC. Through all of it, every
+  poll reported:
+
+  > no data-request yet — enable the continuous data request for this car
+
+  That was the opposite of the truth. The requests were alive and still
+  producing files. People deleted theirs on the strength of that sentence and
+  had to recreate them — and a new request only covers datasets from its
+  creation onwards, so the gap does not come back.
+
+  The mechanism: a read that fails in transport never gets an HTTP status, and
+  the portal connector recorded nothing else. An expired certificate and a
+  clean "404, no such request" both arrived as "no answer", so the code took
+  the single branch it had. The same hole sat one step further on, where an
+  unreachable dataset listing was filed as `empty` — "the portal answered and
+  had nothing for us", which is not what happened either.
+
+  A portal that cannot be reached is now reported as a **portal outage**, with
+  the failure class named in the log and the advice stated plainly: your data
+  request was **not** checked, so leave it alone. A portal that *answers* and
+  names no request keeps the advice that helps, and that half is tested just as
+  hard — a fix that turned a genuine "not set up yet" into a false outage would
+  be the same bug facing the other way.
+
+  From the other end of the same blind spot: when a sign-in strategy failed,
+  the log named the exception class but dropped the HTTP status, so
+  `UpstreamUnavailableError (message redacted)` was everything you had to tell
+  a VW 5xx from a fault on your own side. A status code is not a secret and is
+  now logged alongside the class; the message stays redacted, because that is
+  what can carry a token.
+
+  Reported by @RaAdNe and @mathiasolofsson87. The certificate timings, the
+  recovery steps and the "do not delete your data request" warning were
+  measured and written up by @nijaobscvra666 while the outage was still on, and
+  @scoma24 had asked for the missing status after having to produce a debug
+  capture by hand.
+  ([#1932](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1932),
+  [#1933](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1933),
+  [#1915](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1915))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed
