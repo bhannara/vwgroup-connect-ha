@@ -588,10 +588,22 @@ class CariadBaseClient:
                 # Re-raise on the last strategy; otherwise fall through
                 # to the next one like AuthenticationError above.
                 last_err = err
+                # #1915 (@scoma24) — the class name survived the redaction but
+                # the HTTP status did not, and the status is the one thing that
+                # separates "VW's backend is 5xx-ing" from "something failed on
+                # our side". The reporter had to ask for it by hand after a
+                # portal strategy logged nothing but
+                # "raised UpstreamUnavailableError (message redacted)".
+                # A status code is not a secret; it is appended on its own
+                # rather than by un-redacting the message, which can still
+                # carry a callback URL or a token.
+                _status = getattr(err, "status", None)
                 _LOGGER.warning(
-                    "Auth strategy #%d (kind=%s opts=%s) raised %s for %s "
+                    "Auth strategy #%d (kind=%s opts=%s) raised %s%s for %s "
                     "(message redacted to protect tokens)",
-                    idx, kind, opts, type(err).__name__, self._brand.name,
+                    idx, kind, opts, type(err).__name__,
+                    f" (HTTP {_status})" if isinstance(_status, int) else "",
+                    self._brand.name,
                 )
                 if idx == len(strategies) - 1:
                     if attestation_err is not None:

@@ -212,7 +212,7 @@
       "captcha_retry": "Pro pokračování vyřeš captcha zobrazenou výše.",
       "companion_addon_token_required": "An add-on token is required for new connections. Set api_token in the ADB Bridge add-on and enter the same token here.",
       "companion_agent_token_weak": "The agent token is too predictable. Use the generated random token or a random token with at least 32 characters and 16 distinct characters, with no character making up more than half.",
-      "eu_signin_attestation": "Váš e-mail i heslo jsou v pořádku — samotné přihlášení proběhlo a autorizační kód se vrátil. Volkswagen nyní odmítá poslední krok, výměnu tohoto kódu za token, protože vyžaduje Googlem podepsané ověření zařízení (Play Integrity), které dokáže vytvořit jen oficiální aplikace na skutečném telefonu. Opětovné zadání hesla nepomůže a další pokus také ne. Portál EU Data Act určený jen pro čtení, který v takovém případě obvykle převezme data, pro tento účet také nefungoval: zkontrolujte v portálu, že je pro váš vůz zapnuté sdílení dat. (Sledováno: #1712.)"
+      "eu_signin_attestation": "Váš e-mail i heslo jsou v pořádku — samotné přihlášení proběhlo a autorizační kód se vrátil. Volkswagen nyní odmítá poslední krok, výměnu tohoto kódu za token, protože vyžaduje Googlem podepsané ověření zařízení (Play Integrity), které dokáže vytvořit jen oficiální aplikace na skutečném telefonu. Opětovné zadání hesla nepomůže a další pokus také ne. Portál EU Data Act určený jen pro čtení, který v takovém případě obvykle převezme data, také nic nedodal — a toto hlášení nedokáže říct proč. Otevřete portál v prohlížeči: pokud se načte, zkontrolujte, že je pro váš vůz zapnuté sdílení dat. Pokud se nenačte, je mimo provoz sám portál a na vaší straně není potřeba nic měnit. (Sledováno: #1712.)"
     },
     "abort": {
       "already_configured": "Tento účet je již nastaven.",
@@ -2685,7 +2685,7 @@
     },
     "eu_signin_attestation": {
       "title": "Volkswagen blokuje přihlášení pro {brand}",
-      "description": "Váš e-mail i heslo jsou v pořádku — samotné přihlášení proběhlo a autorizační kód se vrátil. Volkswagen nyní odmítá poslední krok, výměnu tohoto kódu za token, protože vyžaduje Googlem podepsané ověření zařízení (Play Integrity), které dokáže vytvořit jen oficiální aplikace na skutečném telefonu. Opětovné zadání hesla nepomůže a další pokus také ne. Portál EU Data Act určený jen pro čtení, který v takovém případě obvykle převezme data, pro tento účet také nefungoval: zkontrolujte v portálu, že je pro váš vůz zapnuté sdílení dat. (Sledováno: #1712.)"
+      "description": "Váš e-mail i heslo jsou v pořádku — samotné přihlášení proběhlo a autorizační kód se vrátil. Volkswagen nyní odmítá poslední krok, výměnu tohoto kódu za token, protože vyžaduje Googlem podepsané ověření zařízení (Play Integrity), které dokáže vytvořit jen oficiální aplikace na skutečném telefonu. Opětovné zadání hesla nepomůže a další pokus také ne. Portál EU Data Act určený jen pro čtení, který v takovém případě obvykle převezme data, také nic nedodal — a toto hlášení nedokáže říct proč. Otevřete portál v prohlížeči: pokud se načte, zkontrolujte, že je pro váš vůz zapnuté sdílení dat. Pokud se nenačte, je mimo provoz sám portál a na vaší straně není potřeba nic měnit. (Sledováno: #1712.)"
     }
   },
   "services": {

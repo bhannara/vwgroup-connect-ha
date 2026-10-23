@@ -212,7 +212,7 @@
       "captcha_retry": "Rozwiąż captchę widoczną powyżej, aby kontynuować.",
       "companion_addon_token_required": "An add-on token is required for new connections. Set api_token in the ADB Bridge add-on and enter the same token here.",
       "companion_agent_token_weak": "The agent token is too predictable. Use the generated random token or a random token with at least 32 characters and 16 distinct characters, with no character making up more than half.",
-      "eu_signin_attestation": "Twój e-mail i hasło są poprawne — samo logowanie się powiodło, a kod autoryzacyjny wrócił. Volkswagen odmawia teraz ostatniego kroku, wymiany tego kodu na token, ponieważ wymaga podpisanego przez Google poświadczenia urządzenia (Play Integrity), które potrafi wytworzyć tylko oficjalna aplikacja na prawdziwym telefonie. Ponowne wpisanie hasła nie pomoże, kolejna próba również nie. Portal EU Data Act tylko do odczytu, który zwykle przejmuje dane w takiej sytuacji, również nie zadziałał dla tego konta: sprawdź w portalu, czy udostępnianie danych jest włączone dla Twojego auta. (Śledzone: #1712.)"
+      "eu_signin_attestation": "Twój e-mail i hasło są poprawne — samo logowanie się powiodło, a kod autoryzacyjny wrócił. Volkswagen odmawia teraz ostatniego kroku, wymiany tego kodu na token, ponieważ wymaga podpisanego przez Google poświadczenia urządzenia (Play Integrity), które potrafi wytworzyć tylko oficjalna aplikacja na prawdziwym telefonie. Ponowne wpisanie hasła nie pomoże, kolejna próba również nie. Portal EU Data Act tylko do odczytu, który zwykle przejmuje dane w takiej sytuacji, również nic nie dostarczył — a ten komunikat nie potrafi powiedzieć dlaczego. Otwórz portal w przeglądarce: jeśli się wczyta, sprawdź, czy udostępnianie danych jest włączone dla Twojego auta. Jeśli się nie wczyta, to sam portal jest niedostępny i po Twojej stronie nic nie trzeba zmieniać. (Śledzone: #1712.)"
     },
     "abort": {
       "already_configured": "To konto jest już skonfigurowane.",
@@ -2685,7 +2685,7 @@
     },
     "eu_signin_attestation": {
       "title": "Volkswagen blokuje logowanie dla {brand}",
-      "description": "Twój e-mail i hasło są poprawne — samo logowanie się powiodło, a kod autoryzacyjny wrócił. Volkswagen odmawia teraz ostatniego kroku, wymiany tego kodu na token, ponieważ wymaga podpisanego przez Google poświadczenia urządzenia (Play Integrity), które potrafi wytworzyć tylko oficjalna aplikacja na prawdziwym telefonie. Ponowne wpisanie hasła nie pomoże, kolejna próba również nie. Portal EU Data Act tylko do odczytu, który zwykle przejmuje dane w takiej sytuacji, również nie zadziałał dla tego konta: sprawdź w portalu, czy udostępnianie danych jest włączone dla Twojego auta. (Śledzone: #1712.)"
+      "description": "Twój e-mail i hasło są poprawne — samo logowanie się powiodło, a kod autoryzacyjny wrócił. Volkswagen odmawia teraz ostatniego kroku, wymiany tego kodu na token, ponieważ wymaga podpisanego przez Google poświadczenia urządzenia (Play Integrity), które potrafi wytworzyć tylko oficjalna aplikacja na prawdziwym telefonie. Ponowne wpisanie hasła nie pomoże, kolejna próba również nie. Portal EU Data Act tylko do odczytu, który zwykle przejmuje dane w takiej sytuacji, również nic nie dostarczył — a ten komunikat nie potrafi powiedzieć dlaczego. Otwórz portal w przeglądarce: jeśli się wczyta, sprawdź, czy udostępnianie danych jest włączone dla Twojego auta. Jeśli się nie wczyta, to sam portal jest niedostępny i po Twojej stronie nic nie trzeba zmieniać. (Śledzone: #1712.)"
     }
   },
   "services": {

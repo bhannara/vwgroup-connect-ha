@@ -5728,6 +5728,22 @@ class EUDataActConnector:
         # returned None, so get_vehicle_data can tell a 404 "not provisioned yet"
         # (→ delivery_not_ready) apart from a 5xx/429 portal outage (→ portal_error).
         self._last_soft_status: int | None = None
+        # #1932/#1933 — a soft miss that never got a response AT ALL. The
+        # handler for (TimeoutError, ClientConnectionError) returned None
+        # without touching _last_soft_status, so a portal we could not reach
+        # was indistinguishable from one that answered "404, not provisioned".
+        #
+        # Measured, not inferred: on 2026-10-22 VW let the portal's TLS
+        # certificate expire (NotAfter 23:59:59 UTC, renewed by ~08:25 UTC the
+        # next morning). aiohttp raises ClientConnectorCertificateError for
+        # that, which is a ClientConnectionError subclass, so every poll took
+        # the branch above and the log told people to "enable the continuous
+        # data request" — for a request that was alive and still producing
+        # files. Users deleted working requests on that advice.
+        #
+        # Holds the exception CLASS name only. Never the message: a transport
+        # error's __str__ can carry the full request URL.
+        self._last_soft_transport_error: str | None = None
         # StartDate (ISO-8601) of the currently-active data request — i.e. WHEN the
         # portal data request was created. Refreshed each poll from the metadata.
         self.data_request_started_at: str | None = None
@@ -6642,6 +6658,11 @@ class EUDataActConnector:
         request hasn't been enabled / hasn't propagated yet (#393, #424) —
         that's an expected transient, not a hard error.
         """
+        # #1932 — reset per call, so the flag always describes THIS read. Its
+        # sibling _last_soft_status is reset by its CALLERS instead, which left
+        # the metadata path reading a status from an earlier poll; doing it
+        # here closes that hole for the new flag by construction.
+        self._last_soft_transport_error = None
         # v2.13.0 — Bearer mode: attach the device-grant token. Covers every
         # JSON proxy_api call (vehicles list, metadata, datadelivery list,
         # relation) since they all funnel through here. No-op in cookie mode.
@@ -6768,7 +6789,7 @@ class EUDataActConnector:
                             f"EU Data Act GET {_safe_api_url(url)} → HTTP {resp.status}"
                         )
                     return await resp.json(content_type=None)
-            except (TimeoutError, ClientConnectionError):
+            except (TimeoutError, ClientConnectionError) as err:
                 # v2.14.8 — a transport-level timeout/disconnect (portal slow or
                 # briefly unreachable) is NOT an auth failure. Retry with the
                 # same backoff as a transient 5xx; a soft call then gives up as
@@ -6780,6 +6801,10 @@ class EUDataActConnector:
                     await asyncio.sleep(_PORTAL_RETRY_DELAYS[attempt])
                     continue
                 if soft:
+                    # #1932 — record THAT the portal was unreachable, and with
+                    # which exception class, so the caller stops reporting a
+                    # transport failure as "your data request is missing".
+                    self._last_soft_transport_error = type(err).__name__
                     return None
                 raise
         return None
@@ -6896,6 +6921,31 @@ class EUDataActConnector:
                 or ""
             )
         if not identifier:
+            # #1932/#1933 — "no identifier" has two causes that call for
+            # opposite actions from the user, so they must not share a message.
+            # If the metadata read never reached the portal, NOTHING was learned
+            # about the data request: that is a VW-side outage, which is exactly
+            # what portal_error already means, and the request must be left
+            # alone. Only a portal that ANSWERED and still named no identifier
+            # is a genuine "not provisioned yet".
+            #
+            # ``meta is None`` is not load-bearing today: the flag is reset at
+            # the top of every _get_json, and the metadata read is the last one
+            # before this check, so a set flag already implies meta is None.
+            # It is kept because that argument rests on call ORDER — insert one
+            # soft read between them and the flag would describe that read
+            # instead. Pairing the two makes the branch true by its own terms.
+            if meta is None and self._last_soft_transport_error:
+                self._note_no_data("portal_error")
+                _LOGGER.warning(
+                    "EU Data Act portal: could not be reached for %s (%s) — "
+                    "this is a VW-side outage, not a problem with your account "
+                    "or your consent. Your data request was NOT checked, so do "
+                    "not change or delete it; polling resumes on its own once "
+                    "the portal answers again.",
+                    vin[-6:], self._last_soft_transport_error,
+                )
+                return d
             self._note_no_data("no_request")
             _LOGGER.info(
                 "EU Data Act portal: no data-request yet for %s — enable the "
@@ -6924,15 +6974,21 @@ class EUDataActConnector:
             # A 404/410 here means "no delivery yet" (delivery_not_ready); a
             # 5xx/429 is a genuine VW-side outage (portal_error). _get_json records
             # which on a soft miss, so a normal wait isn't mislabelled a fault.
+            # #1932 — a read that never got a response is the third case, and
+            # it is an outage too. "empty" claims the portal answered and had
+            # nothing for us, which is the opposite of what happened.
+            unreachable = self._last_soft_transport_error
             self._note_no_data(
                 "portal_error"
-                if (self._last_soft_status or 0) in _PORTAL_OUTAGE_STATUSES
+                if unreachable
+                or (self._last_soft_status or 0) in _PORTAL_OUTAGE_STATUSES
                 else "empty"
             )
             _LOGGER.info(
-                "EU Data Act portal: dataset listing unavailable for %s "
-                "(HTTP %s); treating as no data this poll.",
-                vin[-6:], self._last_soft_status or "n/a",
+                "EU Data Act portal: dataset listing unavailable for %s (%s); "
+                "treating as no data this poll.",
+                vin[-6:],
+                unreachable or f"HTTP {self._last_soft_status or 'n/a'}",
             )
             return d
         files = listing if isinstance(listing, list) else listing.get("files", [])
