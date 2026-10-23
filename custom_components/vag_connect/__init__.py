@@ -138,12 +138,23 @@ _SETUP_ERRORS: dict[str, str] = {
     ),
     # #1712 — the sign-in works and only the token exchange is refused (device
     # attestation). Say so; the password is not the problem.
+    #
+    # #1932/#1933 — the portal half used to assert "did not work for this
+    # ACCOUNT" and send the user to check their consent. The code never
+    # established that. On 2026-10-22 VW let the portal's TLS certificate
+    # expire and this text told two reporters to go through settings that were
+    # already correct; one filed the wording itself as the bug. What is known
+    # is only that the fallback delivered nothing, so that is what it says now,
+    # with the one check that separates the two causes.
     "eu_signin_attestation": (
         "Volkswagen refuses the final sign-in step (it wants a device "
         "attestation only the official app can produce). Your email and "
         "password are fine and retrying will not help. The read-only EU Data "
-        "Act portal did not work for this account either: check in the portal "
-        "that data sharing is enabled for your car, then reauthenticate."
+        "Act portal, which normally takes over, did not deliver either — and "
+        "this message cannot tell you why. Open the portal in a browser: if "
+        "it loads, check that data sharing is enabled for your car, then "
+        "reauthenticate. If it does not load, the portal itself is down and "
+        "nothing on your side needs changing."
     ),
     # #1813 follow-up — the same expiry on a brand whose app device-code client
     # the manufacturer retired. The sentence above would send that user into the

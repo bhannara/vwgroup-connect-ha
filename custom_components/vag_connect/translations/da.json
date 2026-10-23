@@ -212,7 +212,7 @@
       "captcha_retry": "Løs den viste captcha ovenfor for at fortsætte.",
       "companion_addon_token_required": "An add-on token is required for new connections. Set api_token in the ADB Bridge add-on and enter the same token here.",
       "companion_agent_token_weak": "The agent token is too predictable. Use the generated random token or a random token with at least 32 characters and 16 distinct characters, with no character making up more than half.",
-      "eu_signin_attestation": "Din e-mail og din adgangskode er i orden — selve logindet virkede, og autorisationskoden kom tilbage. Volkswagen afviser nu det sidste trin, at bytte den kode til et token, fordi der kræves en Google-signeret enhedsattestering (Play Integrity), som kun den officielle app på en ægte telefon kan lave. At indtaste adgangskoden igen hjælper ikke, og det gør et nyt forsøg heller ikke. Den skrivebeskyttede EU Data Act-portal, som normalt tager over i dette tilfælde, virkede heller ikke for denne konto: tjek i portalen, at datadeling er slået til for din bil. (Følges: #1712.)"
+      "eu_signin_attestation": "Din e-mail og din adgangskode er i orden — selve logindet virkede, og autorisationskoden kom tilbage. Volkswagen afviser nu det sidste trin, at bytte den kode til et token, fordi der kræves en Google-signeret enhedsattestering (Play Integrity), som kun den officielle app på en ægte telefon kan lave. At indtaste adgangskoden igen hjælper ikke, og det gør et nyt forsøg heller ikke. Den skrivebeskyttede EU Data Act-portal, som normalt tager over i dette tilfælde, leverede heller ikke noget — og denne besked kan ikke sige hvorfor. Åbn portalen i en browser: hvis den indlæses, så tjek, at datadeling er slået til for din bil. Hvis den ikke indlæses, er portalen selv nede, og der skal ikke ændres noget hos dig. (Følges: #1712.)"
     },
     "abort": {
       "already_configured": "Denne konto er allerede konfigureret.",
@@ -2685,7 +2685,7 @@
     },
     "eu_signin_attestation": {
       "title": "Volkswagen blokerer login for {brand}",
-      "description": "Din e-mail og din adgangskode er i orden — selve logindet virkede, og autorisationskoden kom tilbage. Volkswagen afviser nu det sidste trin, at bytte den kode til et token, fordi der kræves en Google-signeret enhedsattestering (Play Integrity), som kun den officielle app på en ægte telefon kan lave. At indtaste adgangskoden igen hjælper ikke, og det gør et nyt forsøg heller ikke. Den skrivebeskyttede EU Data Act-portal, som normalt tager over i dette tilfælde, virkede heller ikke for denne konto: tjek i portalen, at datadeling er slået til for din bil. (Følges: #1712.)"
+      "description": "Din e-mail og din adgangskode er i orden — selve logindet virkede, og autorisationskoden kom tilbage. Volkswagen afviser nu det sidste trin, at bytte den kode til et token, fordi der kræves en Google-signeret enhedsattestering (Play Integrity), som kun den officielle app på en ægte telefon kan lave. At indtaste adgangskoden igen hjælper ikke, og det gør et nyt forsøg heller ikke. Den skrivebeskyttede EU Data Act-portal, som normalt tager over i dette tilfælde, leverede heller ikke noget — og denne besked kan ikke sige hvorfor. Åbn portalen i en browser: hvis den indlæses, så tjek, at datadeling er slået til for din bil. Hvis den ikke indlæses, er portalen selv nede, og der skal ikke ændres noget hos dig. (Følges: #1712.)"
     }
   },
   "services": {

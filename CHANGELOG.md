@@ -267,6 +267,16 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   now logged alongside the class; the message stays redacted, because that is
   what can carry a token.
 
+  The notice shown when sign-in hits VW's device-attestation wall carried the
+  same false certainty, in English and all eleven translations: the portal
+  *"did not work for **this account**: check that data sharing is enabled for
+  your car"*. The code never established that — at that point it knows only
+  that the fallback returned nothing. Both reporters went through consent
+  settings that were already correct, and one filed the wording itself as the
+  bug. It now says what is known and gives the one check that tells the two
+  causes apart: open the portal in a browser. If it loads, check your consent.
+  If it does not, the portal is down and nothing on your side needs changing.
+
   Reported by @RaAdNe and @mathiasolofsson87. The certificate timings, the
   recovery steps and the "do not delete your data request" warning were
   measured and written up by @nijaobscvra666 while the outage was still on, and

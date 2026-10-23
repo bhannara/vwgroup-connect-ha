@@ -212,7 +212,7 @@
       "captcha_retry": "Please solve the captcha shown above to continue.",
       "companion_addon_token_required": "An add-on token is required for new connections. Set api_token in the ADB Bridge add-on and enter the same token here.",
       "companion_agent_token_weak": "The agent token is too predictable. Use the generated random token or a random token with at least 32 characters and 16 distinct characters, with no character making up more than half.",
-      "eu_signin_attestation": "Your email and password are fine — the sign-in itself worked and the authorization code came back. Volkswagen now refuses the final step, trading that code for a token, because it wants a Google-signed device-attestation token (Play Integrity) that only the official app on a genuine phone can produce. Re-entering your password will not help, and neither will retrying. The read-only EU Data Act portal, which normally takes over in this case, did not work for this account either: check in the portal that data sharing is enabled for your car. (Tracked: #1712.)"
+      "eu_signin_attestation": "Your email and password are fine — the sign-in itself worked and the authorization code came back. Volkswagen now refuses the final step, trading that code for a token, because it wants a Google-signed device-attestation token (Play Integrity) that only the official app on a genuine phone can produce. Re-entering your password will not help, and neither will retrying. The read-only EU Data Act portal, which normally takes over in this case, did not deliver either — and this notice cannot tell you why. Open the portal in a browser: if it loads, check that data sharing is enabled for your car. If it does not load, the portal itself is down and nothing on your side needs changing. (Tracked: #1712.)"
     },
     "abort": {
       "already_configured": "This account is already configured.",
@@ -2685,7 +2685,7 @@
     },
     "eu_signin_attestation": {
       "title": "Volkswagen blocks the sign-in for {brand}",
-      "description": "Your email and password are fine — the sign-in itself worked and the authorization code came back. Volkswagen now refuses the final step, trading that code for a token, because it wants a Google-signed device-attestation token (Play Integrity) that only the official app on a genuine phone can produce. Re-entering your password will not help, and neither will retrying. The read-only EU Data Act portal, which normally takes over in this case, did not work for this account either: check in the portal that data sharing is enabled for your car. (Tracked: #1712.)"
+      "description": "Your email and password are fine — the sign-in itself worked and the authorization code came back. Volkswagen now refuses the final step, trading that code for a token, because it wants a Google-signed device-attestation token (Play Integrity) that only the official app on a genuine phone can produce. Re-entering your password will not help, and neither will retrying. The read-only EU Data Act portal, which normally takes over in this case, did not deliver either — and this notice cannot tell you why. Open the portal in a browser: if it loads, check that data sharing is enabled for your car. If it does not load, the portal itself is down and nothing on your side needs changing. (Tracked: #1712.)"
     }
   },
   "selector": {
