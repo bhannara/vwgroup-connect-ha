@@ -63,6 +63,26 @@ _SELF_DESCRIBING_ERRORS = (
 _REFRESH_MAX_PER_HOUR = 3
 _REFRESH_WINDOW_S = 3600
 
+# #1918 — the two read-only fallback channels do not hold a bearer at all. Each
+# installs a SENTINEL TokenSet: a literal placeholder as the ``access_token``
+# and an EMPTY ``refresh_token`` (``_arm_eu_portal`` and the website-authproxy
+# arming below), so ``TokenSet.is_valid()`` — which only tests both strings for
+# non-emptiness — reports the client as authenticated while there is nothing to
+# authenticate with. Refreshing one of these cannot produce a token: the refresh
+# branch is skipped for want of a refresh_token, the full re-login lands on the
+# same fallback, and the same sentinel is reinstalled.
+#
+# Deliberately NOT ``device_grant_portal`` or ``mbb``. Both read as portal-ish
+# by name and both carry a REAL bearer with its own working refresh recipe, so
+# refusing them would break a channel that works.
+#
+# The same pair is already the discriminator at two other sites — the
+# coordinator forces a fresh login rather than reusing a persisted sentinel, and
+# ``refresh_capabilities`` refuses to send one to the BFF at all ("the portal
+# sentinel token isn't a real BFF token") — so this is that existing idea stated
+# once more, not a new one.
+_COOKIE_SESSION_STRATEGIES = ("data_act_portal", "website_authproxy")
+
 # v2.19.0 (C1) — the supplementary Tibber source sweeps ALL paired cars in one
 # fetch, but the coordinator asks per-VIN; cache the sweep for a poll so a
 # multi-car account triggers one fetch, not one per VIN. A little below the
@@ -315,6 +335,13 @@ class CariadBaseClient:
         # the same news. Cleared whenever an attempt is actually booked, so a
         # later episode reports itself again.
         self._refresh_budget_reported: dict[bool, bool] = {False: False, True: False}
+        # #1918 (@georghaberkorn68-ctrl) — same treatment, one cause earlier:
+        # whether the cookie-session refusal below has already said so. Reported
+        # at INFO the first time and DEBUG afterwards, because the refusal
+        # repeats on every native read of every poll for as long as the fallback
+        # is live. Cleared the moment a refresh runs on a real token, so a later
+        # episode is news again.
+        self._cookie_session_refusal_reported: bool = False
         # v2.9.0 - VW account-lock detection sliding window. Tuples of
         # (monotonic_seconds, http_status). Coordinator drains via
         # ``self.account_lock_signal`` to decide whether to raise the
@@ -1801,6 +1828,71 @@ class CariadBaseClient:
                 and self._tokens.access_token != stale_access_token
             ):
                 return
+            # #1918 (@georghaberkorn68-ctrl) — a cookie-session fallback has no
+            # bearer, so refreshing it cannot do anything except cost. The
+            # refresh branch below is skipped for want of a refresh_token, the
+            # full re-login lands on the same fallback, the same sentinel is
+            # reinstalled, and the caller's retry 401s exactly as before. One
+            # budget slot, nothing gained.
+            #
+            # Measured from his capture: a portal-mode CUPRA poll makes three
+            # native reads — one charging-profiles plus two battery-care in a
+            # single gather — and each 401 booked a slot, so the whole 3-per-hour
+            # budget was gone inside ONE poll. The drop-retries fourteen minutes
+            # later were then refused for lack of budget, which is the part he
+            # actually noticed. Neither read arms its one-hour cache on the
+            # failure path, so it repeated on every poll, indefinitely.
+            #
+            # Note why the #1078 guard above did not contain it: that guard
+            # returns only when the token CHANGED while we queued, and these
+            # sentinels are constant literals. After a "successful" re-login the
+            # access_token is byte-identical to the stale one the waiter
+            # captured, so the single-flight guard never fires and the two
+            # concurrent battery-care 401s both booked. The sentinel disables
+            # the very guard that exists to stop one event eating the budget.
+            #
+            # The principle is already in the tree, for this brand, one issue
+            # earlier: ``tests/test_584_oplist_401_no_refresh.py`` pins that a
+            # 401 "which no token refresh can fix" must not feed the refresh
+            # budget, because the storm guard then raised a misleading "please
+            # reauthenticate". Same instinct, different endpoint.
+            #
+            # Recovery is not lost, but it does move: the coordinator forces a
+            # full ``authenticate()`` whenever the PERSISTED strategy is one of
+            # these two, so every restart and every entry reload re-attempts the
+            # native backend from the top of the strategy ladder. What is gone is
+            # the accidental in-session retry — and that is the point, because
+            # the alternative is a full password login every hour, forever,
+            # against an account whose native plane may be permanently walled.
+            # That is the exact risk _REFRESH_MAX_PER_HOUR exists to contain.
+            if (
+                self._tokens is not None
+                and not self._tokens.refresh_token
+                and self._tokens.strategy in _COOKIE_SESSION_STRATEGIES
+            ):
+                _cs_args = (self._brand.name, self._tokens.strategy)
+                if not self._cookie_session_refusal_reported:
+                    self._cookie_session_refusal_reported = True
+                    _LOGGER.info(
+                        "No token to refresh for %s: this entry is on the "
+                        "read-only %s fallback, which is a cookie session with "
+                        "no bearer. Skipping the refresh instead of spending a "
+                        "slot of the hourly budget on a login that would land "
+                        "on the same fallback. Reads are unaffected; a restart "
+                        "or a reload of the entry re-attempts the native "
+                        "backend.",
+                        *_cs_args,
+                    )
+                else:
+                    _LOGGER.debug(
+                        "Refresh skipped for %s: still on the read-only %s "
+                        "fallback (no bearer to refresh, no budget spent)",
+                        *_cs_args,
+                    )
+                return
+            # A refresh is going ahead on a real token, so a later cookie-session
+            # episode is news again.
+            self._cookie_session_refusal_reported = False
             now = time.monotonic()
             cutoff = now - _REFRESH_WINDOW_S
             history = (

@@ -286,6 +286,44 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   [#1933](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1933),
   [#1915](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1915))
 
+- **A sign-in that could not possibly work was paying for itself out of an
+  hourly budget, and the retries that mattered were then refused.** If your car
+  is on the read-only EU Data Act portal fallback, the integration holds a
+  placeholder instead of a real token, because the portal is a session rather
+  than a token. Anything that still tried to read the manufacturer's own backend
+  got turned away, and every one of those refusals triggered a fresh sign-in
+  that landed straight back on the same fallback and changed nothing.
+
+  There is a deliberate cap of three sign-ins per hour, because hammering a
+  brand account gets it locked. A single poll made three of those reads, so one
+  poll spent the entire hour's allowance on sign-ins that could not succeed.
+  Fourteen minutes later the retries that would have fetched real data were
+  refused for lack of allowance, and because neither of those reads remembers a
+  failure, it repeated on every poll for as long as the fallback was live.
+
+  @georghaberkorn68-ctrl measured it: two consecutive polls, the three retries
+  in between, and the budget message that follows them. His own reading of the
+  capture was right on every point.
+
+  A fallback with nothing to refresh is now skipped instead of being charged
+  for, on both the reading and the command allowance, and it says so once per
+  episode rather than on every read. **What changes for you:** nothing about
+  your data — the portal reads were never affected — but the retry after a
+  missed reading now has the allowance it needs. One honest trade: the
+  accidental side effect of those futile sign-ins was that they re-tried the
+  manufacturer's backend a few times an hour, so if it started working again
+  you would be back on it within the hour. That retry now happens when Home
+  Assistant restarts or you reload the entry, which is the right place for it —
+  the alternative is a password sign-in every hour, forever, against an account
+  whose own backend may be closed for good.
+
+  The sister channel that reads the manufacturer's website had the identical
+  shape and is fixed with it. Two things this deliberately does **not** do: the
+  three pointless reads are still sent each poll, and the separate flaw that
+  let two simultaneous refusals both be charged is now unreachable here rather
+  than repaired. Both are written up for their own fix.
+  ([#1918](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1918))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed
