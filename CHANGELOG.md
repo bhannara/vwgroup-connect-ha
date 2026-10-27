@@ -363,6 +363,66 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   than repaired. Both are written up for their own fix.
   ([#1918](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1918))
 
+- **A recovery mechanism that never once ran has been removed, and the gap it
+  was supposed to cover is now written down instead of pretended away.** Some
+  sign-in paths leave a session that cannot renew itself: the credential simply
+  expires after about two hours, and the only way back is to sign in again. In
+  v2.8.0 a watchdog was added for exactly that — before each poll it checked
+  whether every car had been failing and stale for more than twice the poll
+  interval, and if so it signed in again quietly so nobody had to reload the
+  integration by hand.
+
+  Its very first check compared a session's label against a value that **no
+  sign-in has ever written**. The label is a keyword into one of the sign-in
+  flows, not something stamped on the resulting session, so the comparison
+  could only ever be false. The watchdog returned immediately, for every
+  account, on every poll, for as long as it existed. The same dead value also
+  sat in a capability check, which quietly reported one capability short for
+  those accounts.
+
+  **Nothing changes for you**, and that is the point: nothing was happening.
+  Removing it is behaviour-neutral, whereas repairing the check would have
+  switched on a never-executed mechanism in a patch release — and it called the
+  sign-in directly, outside the hourly limit that exists to stop an account
+  being locked, so switching it on safely is a larger job than the bug is worth.
+  A safety net that is believed and absent is worse than one that is known to be
+  absent: two people read this code this week and both took it for working.
+
+  The condition it was built for is real and is **not** fully covered by what
+  remains — a failed read does trigger a fresh sign-in, but an expired
+  credential does not always come back as the kind of failure that triggers it.
+  That is now tracked on its own rather than left to a mechanism that was not
+  doing it.
+
+  Removing rather than repairing it was checked against the field before it was
+  decided, not after. A read-only look at four comparable projects found **no
+  proactive staleness watchdog in any of them** — no timers at all, and every
+  sign-in reached either lazily, from a failing request, or from the setup
+  dialog. The one proactive thing anywhere in the field guards a session that
+  *can* be renewed, and its own history is the warning: it was added, then
+  needed a sign-in fallback bolted on because rolling alone did not stop the
+  session dying, and then needed a fix because a dead session kept it polling
+  and sent the owner a fresh challenge message on every tick. That is the shape
+  ours would have had.
+
+  What replaced it is what was already there, and it is now tested end to end
+  rather than assumed: a failing read drives exactly one sign-in and one retry,
+  billed to the same hourly limit as everything else, and a failure that
+  survives that does not loop. None of the four projects has such a test —
+  theirs stub either the client or the very function under test.
+
+  The reason this survived is that two reasonable halves were never checked
+  against each other: something writes these labels, something else branches on
+  them, and nothing asserted that the two sets meet. A test now pins that
+  pairing for every label rather than keeping a list of the known-good ones —
+  a list would have to be maintained by whoever forgot to pair them in the
+  first place.
+
+  Found while measuring an unrelated budget problem on the same kind of
+  session, which is where the uncapped sign-in path and the dead gate both
+  turned up.
+  ([#1918](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1918))
+
 ## [5.1.1] - 2026-10-21 — Sensors that fill, names that fit / Sensoren, die sich füllen, Namen, die passen
 
 ### Geändert / Changed

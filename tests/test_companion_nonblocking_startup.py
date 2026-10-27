@@ -215,7 +215,6 @@ def _poll_coord(entry_data: dict[str, Any]) -> tuple[Any, list[float]]:
     coord._refresh_reporter_issues = lambda: None
     coord._save_vehicle_cache = lambda: None
     coord._update_data_act_no_data_repair = lambda: None
-    coord._maybe_run_stale_watchdog = AsyncMock()
     coord.refresh_trip_statistics = AsyncMock()
     coord.refresh_charging_history = AsyncMock()
     coord.refresh_charging_profiles = AsyncMock()
