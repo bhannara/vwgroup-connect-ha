@@ -46,6 +46,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [5.1.2] - 2026-10-28 — Ten things it reported wrongly / Zehn Dinge, die es falsch gemeldet hat
+
 ### Behoben / Fixed
 
 - **A readiness reading that never arrived was reported as the car being
@@ -161,9 +163,22 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   calendar has no writer anywhere, so it can never fire
   ([#1925](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1925)).
 
-- **The "data outdated" indicator could not report a frozen feed, which is the
-  only thing it is for.** On an entry whose feed had stopped, it kept reading
-  *no* — indefinitely
+- **The "data outdated" indicator never re-decided its verdict once a snapshot
+  was republished.** On an entry whose feed had stopped, it kept reading
+  *no* — indefinitely.
+
+  **What this does not cover, so nobody updates expecting it to.** The verdict
+  is computed from when the delivery was last seen, not from when the car
+  actually captured the values inside it. A feed that keeps delivering on time
+  while the payload is two days old therefore still reads as fresh, and
+  @tdrieshof measured exactly that on an Audi Q6 e-tron: 56 % shown against 38 %
+  in the car, with the indicator saying *no* and nothing in the interface
+  suggesting the reading was old. That is a different hole in the same
+  indicator, it is open, and it is the next piece of work rather than part of
+  this one. His measurement also killed a heuristic I had been relying on —
+  the values do move, because an old curve is being replayed late, so movement
+  is not evidence of freshness
+  ([#1917](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1917))
   ([#1920](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1920)).
 
   The verdict was decided in one place, during enrichment, and enrichment only
