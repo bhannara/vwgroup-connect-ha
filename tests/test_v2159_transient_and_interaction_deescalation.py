@@ -229,7 +229,6 @@ def _build_coordinator(get_status_result):
     coord._refresh_reporter_issues = lambda: None  # type: ignore[assignment]
     coord._save_vehicle_cache = lambda: None  # type: ignore[assignment]
     coord._update_data_act_no_data_repair = lambda: None  # type: ignore[assignment]
-    coord._maybe_run_stale_watchdog = AsyncMock()  # type: ignore[assignment]
     coord.refresh_trip_statistics = AsyncMock()  # type: ignore[assignment]
     coord.refresh_charging_history = AsyncMock()  # type: ignore[assignment]
     coord.refresh_charging_profiles = AsyncMock()  # type: ignore[assignment]
