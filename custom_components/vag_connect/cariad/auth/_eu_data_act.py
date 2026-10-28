@@ -373,6 +373,34 @@ def _login_fields(html: str) -> tuple[dict[str, str], str | None]:
     return fields, form.action
 
 
+def _single_page_login_keys(fields: dict[str, str]) -> tuple[str, str] | None:
+    """Return ``(identifier_key, password_key)`` when this is a ONE-PAGE form.
+
+    #1947 — the classic flow asks for the identifier and the password on two
+    separate pages, and the first carries a token that binds the two steps
+    together. A page that asks for both at once has no second step to bind, so
+    that token is simply absent — and until this function existed, its absence
+    was read as "we failed to understand the page" and the password was never
+    sent at all.
+
+    The distinguishing fact is not the missing token. It is that the page
+    offers an identifier input **and** a password input simultaneously, which
+    the two-step pages never do. Keyed on that rather than on the absence,
+    because "a shape we recognise" is a claim we can make and "not the shape we
+    knew" is not.
+
+    Returns ``None`` for anything that is not unambiguously a one-page form, so
+    a page we genuinely cannot read still fails loudly instead of being posted
+    a password on a guess.
+    """
+    if "password" not in fields:
+        return None
+    for identifier in ("username", "email", "identifier", "user", "userId"):
+        if identifier in fields:
+            return identifier, "password"
+    return None
+
+
 def _resolve_action(base_url: str, action: str | None) -> str:
     """Resolve a form ``action`` against *base_url*, guarding the
     doubled-``/login/login/`` trap.
@@ -6374,44 +6402,78 @@ class EUDataActConnector:
             signin_url = str(resp.url)
             signin_html = await resp.text(errors="replace")
 
-        # 2. POST email (identifier step).
+        # 2. Read the sign-in page and work out WHICH page it is before
+        #    assuming. #1947 — on 2026-10-26 the portal replaced the two-step
+        #    sign-in with one that asks for the identifier and the password
+        #    together. The old code required the token that binds step one to
+        #    step two, so the new page failed the check and the password was
+        #    never sent. Twelve reporters across SEAT and CUPRA, in three
+        #    countries, within two days, and because the other sign-in route
+        #    fails for those brands at the same moment the dialog told all of
+        #    them their password was wrong.
         fields, action = _login_fields(signin_html)
-        if "hmac" not in fields:
+        one_page = (
+            _single_page_login_keys(fields) if "hmac" not in fields else None
+        )
+        if one_page is not None:
+            # Both inputs on one page: fill both and post once. There is no
+            # second page to fetch, so there is no second token to carry.
+            identifier_key, password_key = one_page
+            fields[identifier_key] = email
+            fields[password_key] = password
+            _LOGGER.debug(
+                "EU Data Act portal: single-page sign-in form (identifier "
+                "field %r); posting both credentials in one step",
+                identifier_key,
+            )
+            landing, landing_html, status = await self._follow_login_redirects(
+                "POST",
+                _resolve_action(signin_url, action),
+                data=fields,
+                headers={**headers, "Referer": signin_url},
+            )
+        elif "hmac" not in fields:
+            # Neither shape. Keep failing loudly and keep printing the field
+            # names: that list is what let the reporters on #1947 identify the
+            # new page from the outside before anyone had read the code.
             raise AuthenticationError(
                 "EU Data Act portal: could not parse the sign-in form "
                 f"(fields: {sorted(fields)})"
             )
-        fields["email"] = email
-        identifier_action = _resolve_action(signin_url, action)
-        async with self._session.post(
-            identifier_action, data=fields, headers={**headers, "Referer": signin_url},
-            allow_redirects=True, timeout=ClientTimeout(total=_TIMEOUT_S),
-        ) as resp:
-            authenticate_url = str(resp.url)
-            authenticate_html = await resp.text(errors="replace")
+        else:
+            # 2a. POST email (identifier step).
+            fields["email"] = email
+            identifier_action = _resolve_action(signin_url, action)
+            async with self._session.post(
+                identifier_action, data=fields,
+                headers={**headers, "Referer": signin_url},
+                allow_redirects=True, timeout=ClientTimeout(total=_TIMEOUT_S),
+            ) as resp:
+                authenticate_url = str(resp.url)
+                authenticate_html = await resp.text(errors="replace")
 
-        # 3. POST credentials (password step). The hmac on this page is a
-        #    FRESH one bound to the password session.
-        fields2, action2 = _login_fields(authenticate_html)
-        if "hmac" not in fields2:
-            err = _login_error(authenticate_html)
-            raise AuthenticationError(
-                err or "EU Data Act portal: no password form returned "
-                "(check email address or the login flow changed)"
+            # 3. POST credentials (password step). The hmac on this page is a
+            #    FRESH one bound to the password session.
+            fields2, action2 = _login_fields(authenticate_html)
+            if "hmac" not in fields2:
+                err = _login_error(authenticate_html)
+                raise AuthenticationError(
+                    err or "EU Data Act portal: no password form returned "
+                    "(check email address or the login flow changed)"
+                )
+            fields2["email"] = email
+            fields2["password"] = password
+            # CRITICAL: post to the clean /login/authenticate URL. Posting to
+            # authenticate_url (which carries ?relayState=) duplicates the
+            # param and the IDP rejects it with HTTP 400. _resolve_action
+            # strips the query AND guards the doubled-/login/login/ trap.
+            authenticate_action = _resolve_action(authenticate_url, action2)
+            landing, landing_html, status = await self._follow_login_redirects(
+                "POST",
+                authenticate_action,
+                data=fields2,
+                headers={**headers, "Referer": authenticate_url},
             )
-        fields2["email"] = email
-        fields2["password"] = password
-        # CRITICAL: post to the clean /login/authenticate URL. Posting to
-        # authenticate_url (which carries ?relayState=) duplicates the
-        # param and the IDP rejects it with HTTP 400. _resolve_action
-        # strips the query AND guards the doubled-/login/login/ trap.
-        authenticate_action = _resolve_action(authenticate_url, action2)
-        landing, landing_html, status = await self._follow_login_redirects(
-            "POST",
-            authenticate_action,
-            data=fields2,
-            headers={**headers, "Referer": authenticate_url},
-        )
 
         # 3b. (#527, v2.15.5) — generic OAuth/IDP consent grant page. After
         # correct credentials the IDP can interject a server-rendered consent

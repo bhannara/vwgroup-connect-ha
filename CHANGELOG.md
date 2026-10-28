@@ -363,6 +363,50 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   than repaired. Both are written up for their own fix.
   ([#1918](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1918))
 
+- **SEAT and CUPRA could not sign in to the EU Data Act portal from 26 October,
+  and the dialog told everyone their password was wrong.** The portal replaced
+  its sign-in page with one that asks for the e-mail address and the password
+  together instead of on two pages. The integration only knew the older layout
+  and stopped as soon as it did not recognise what it was given — so the
+  password was never even sent.
+
+  Because the other sign-in route is refused for those two brands at the same
+  moment, **both** ways in failed, and the repair dialog settled on *"e-mail
+  address or password incorrect"*. That sentence was never established by
+  anything. At least three people re-checked credentials that were correct the
+  whole time, and one reported a working portal login, a live data request and
+  files arriving every fifteen minutes while the integration insisted the
+  password was wrong. Twelve reporters in three countries over two days, on
+  Born, Tavascan, Leon ST, Raval, Formentor and Mii electric.
+
+  Both layouts are now read. A page that asks for both at once gets both in one
+  go; the older two-page sequence is unchanged, which is the half most of the
+  test effort went into — a fix for two brands that broke the sign-in for every
+  other would have been a worse outcome than the bug.
+
+  The detection keys on **recognising a shape**, not on failing to recognise
+  the old one: a page counts as the new layout only when it offers somewhere to
+  type an address *and* somewhere to type a password. A page carrying a password
+  box and nothing else is not posted credentials on the strength of it, and a
+  page that is neither layout still fails loudly and still prints the field
+  names it found — that list is what let the reporters identify the new page
+  from the outside before anyone had read a line of code.
+
+  One near-miss worth recording, because it was caught by deliberately breaking
+  the fix rather than by review: the integration lifts a pre-filled address out
+  of the page itself, so an **old** first page can carry an address field while
+  still asking only for the address. Recognising the new layout from the
+  address alone would have posted the password to a page that never asked for
+  one.
+
+  Reported by @revilo-1970, @georghaberkorn68-ctrl, @burratha, @Daftsios,
+  @wilpatat, @nijaobscvra666, @peepprr, @Ryccou, @Jerjolmic, @lichti4,
+  @tomasroud73 and @RichardPitt. @nijaobscvra666 named the function; @Ryccou
+  worked out both halves unaided, including that the misleading message was a
+  consequence rather than a cause; @peepprr established it was not CUPRA-only.
+  ([#1947](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1947),
+  [#1951](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1951),
+  [#1953](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1953))
 - **A recovery mechanism that never once ran has been removed, and the gap it
   was supposed to cover is now written down instead of pretended away.** Some
   sign-in paths leave a session that cannot renew itself: the credential simply
