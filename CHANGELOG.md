@@ -46,6 +46,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [5.1.3] - 2026-10-28 — No verdict without the evidence / Kein Urteil ohne Beleg
+
 ### Behoben / Fixed
 
 - **An existing entry could not finish setting itself up, and the message
