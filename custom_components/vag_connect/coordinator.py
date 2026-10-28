@@ -2516,93 +2516,6 @@ class VagConnectCoordinator(DataUpdateCoordinator):
     # carries the marker into the destination repo.
     _PROVENANCE_WATCHDOG = "watchdog_silentauth_provenance_n2vpw9c3_2026"
 
-    async def _maybe_run_stale_watchdog(self) -> None:
-        """v2.8.0 — silent re-authenticate when hybrid_full goes stale.
-
-        VW EU users on the `hybrid_full` strategy have no real
-        refresh_token (Play Integrity walls the BFF token endpoint).
-        The access_token expires after ~2 hours and the integration
-        starts returning failed polls. Before this watchdog, the
-        symptom was a silently dead integration that users had to
-        reload by hand (a common pattern in the upstream VW HA
-        community ran on template-trigger automations).
-
-        Gating logic:
-          - Active strategy must be `hybrid_full`. Other strategies
-            (`device_grant`, `classic`, `data_act_portal`) handle
-            their own refresh paths via refresh_token / re-fetch.
-          - All VINs must have failure_count >= 2 (single transient
-            hiccups do not trigger).
-          - All VINs must have last_good_at older than
-            2x scan_interval (ensures we are not racing a temporary
-            network blip).
-
-        On match, fires `self._cariad_client.authenticate()` again
-        using the same Brand-ID credentials stored in entry.data. On
-        success, the access_token is refreshed in place and the next
-        poll cycle succeeds without user interaction. On failure,
-        we fall through to standard behaviour, the existing outer
-        exception handler then triggers the HA reauth dialog.
-        """
-        if not self._started or self._cariad_client is None:
-            return
-        tokens = getattr(self._cariad_client, "_tokens", None)
-        if tokens is None or getattr(tokens, "strategy", "") != "hybrid_full":
-            return
-        if not getattr(self, "vehicle_last_good_at", None):
-            return
-        if not self.vehicle_last_good_at:
-            return
-
-        interval_s = max(
-            int(
-                self.entry.options.get(CONF_SCAN_INTERVAL)
-                or self.entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-            ) * 60,
-            _CC_MIN_INTERVAL_S,
-        )
-        stale_threshold_s = 2 * interval_s
-        now = datetime.now(tz=timezone.utc)
-
-        all_stale = True
-        for vin, last_good in self.vehicle_last_good_at.items():
-            elapsed = (now - last_good).total_seconds()
-            if elapsed < stale_threshold_s:
-                all_stale = False
-                break
-            if self.vehicle_failure_count.get(vin, 0) < 2:
-                all_stale = False
-                break
-        if not all_stale:
-            return
-
-        _LOGGER.info(
-            "VW Group Connect: hybrid_full watchdog — every VIN stale for "
-            ">%ds with >=2 consecutive failures. Triggering silent "
-            "re-authenticate before next poll attempt.",
-            stale_threshold_s,
-        )
-        try:
-            await self._cariad_client.authenticate()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning(
-                "VW Group Connect: watchdog silent re-auth raised %s. "
-                "Falling through to standard poll behaviour; if the "
-                "next poll also fails, the existing reauth handler "
-                "will surface to the user.",
-                type(err).__name__,
-            )
-            return
-        # Reset failure counts so the next poll iteration has a
-        # clean slate; otherwise we would re-trigger the watchdog
-        # immediately even after a successful re-auth.
-        for vin in list(self.vehicle_failure_count.keys()):
-            self.vehicle_failure_count[vin] = 0
-        _LOGGER.info(
-            "VW Group Connect: watchdog silent re-auth succeeded, "
-            "failure counts cleared. Next poll should recover."
-        )
-
     async def _ensure_data_act_custom_request_kickoff(
         self, *, force: bool = False
     ) -> None:
@@ -4854,9 +4767,6 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         Nightly reduction (22:00–05:00): doubles the polling interval to reduce
         API calls and avoid rate limits during low-activity hours.
 
-        v2.8.0 — pre-flight `_maybe_run_stale_watchdog()` runs before
-        each poll attempt. See that method's docstring.
-
         #968 companion startup — ``first_immediate`` skips the sleep before the
         first iteration only (companion entries, whose setup read is deferred).
         """
@@ -4976,25 +4886,11 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(sleep_s)
             if not self._started:
                 break
-            # v2.8.0 — pre-flight watchdog. If we are on the
-            # hybrid_full strategy and every VIN has been stale +
-            # failing for >2x scan_interval, silently re-authenticate
-            # before attempting the next poll. No-op for every other
-            # strategy and for healthy hybrid_full sessions.
-            try:
-                await self._maybe_run_stale_watchdog()
-            except Exception as wd_err:  # noqa: BLE001
-                # Watchdog must NEVER break the poll loop.
-                _LOGGER.debug(
-                    "VW Group Connect: stale watchdog itself raised %s, "
-                    "ignored.",
-                    type(wd_err).__name__,
-                )
             try:
                 # Lazy-initialise per-VIN tracking so tests bypassing __init__ work.
                 if not hasattr(self, "vehicle_success"):
                     self.vehicle_success = {}
-                # #1434 — this background hybrid_full loop is the actual periodic
+                # #1434 — this background loop is the actual periodic
                 # driver (update_interval is None; _async_update_data is not the
                 # periodic path here), so it needs its own _active_vins() filter.
                 # Without it, a vehicle the user disabled in HA keeps being polled
@@ -6674,11 +6570,19 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 return False
             tokens = getattr(client, "_tokens", None)
             strategy = getattr(tokens, "strategy", "") if tokens else ""
-            # Hybrid_full / data_act_portal / device_grant(_portal) all flow
-            # through the browser-based DAG/IDP path (v2.6.0+).
+            # data_act_portal / device_grant(_portal) all flow through the
+            # browser-based DAG/IDP path (v2.6.0+).
+            #
+            # ``hybrid_full`` used to be listed here as a fourth. It was never
+            # a strategy any sign-in writes: the hybrid flow takes it as a
+            # keyword and stamps nothing, so its token set carries the empty
+            # default. Comparing against it could only ever be False, and this
+            # observation reported one capability short for those entries.
+            # The same dead value also gated a recovery watchdog, which is why
+            # tests/test_strategy_labels_are_paired.py now pins every consumed
+            # label against the ones the code can actually produce.
             return strategy in (
-                "hybrid_full", "data_act_portal", "device_grant",
-                "device_grant_portal",
+                "data_act_portal", "device_grant", "device_grant_portal",
             )
 
         # Vehicle-data capabilities: scan VINs for a non-None field.
