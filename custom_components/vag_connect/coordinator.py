@@ -198,27 +198,73 @@ def _gap_fill_from_export(
 
 
 def _capture_age_s(data: dict[str, Any]) -> float | None:
-    """Seconds since the car's own data was captured (``last_seen_at``), or None.
+    """Seconds since the car itself captured the data, or None.
 
-    ``last_seen_at`` is channel-heterogeneous — a ``datetime`` from the BFF/Škoda
-    paths, an ISO string from the EU Data Act portal (the very channel that
-    freezes), or absent. Handle both real types; anything else / missing → None so
-    the caller does not flag it. A future-dated OCU clock yields a negative age
-    (< any threshold) → no false alarm. (#465)
+    #1917 (@tdrieshof, @HeinMelissen) — this used to read ``last_seen_at`` and
+    its own docstring called that "the car's own data was captured". It is not:
+    ``last_seen_at`` says when the delivery was last SEEN, which a channel
+    refreshes even when every value inside it is old. So the one verdict whose
+    job is to flag a frozen feed was anchored on the wrong clock. Measured on a
+    portal-only Audi Q6 e-tron: the car was at 38 %, Home Assistant showed 56 %,
+    and nothing said the reading was two days old.
+
+    **The capture time was already in the snapshot.** ``field_captured_ts`` is a
+    documented provenance map (see ``_PROVENANCE_MAPS``); it already supplies the
+    per-sensor ``data_captured_at`` attribute and flips ``freshness_source`` from
+    "dataset" to "point". The per-sensor attributes knew the capture time while
+    the staleness verdict did not. This function now looks at it.
+
+    Preference, best evidence first:
+
+    1. the **newest** entry of ``field_captured_ts`` — "when did the car last
+       capture anything". A carried-forward field keeps its OLD stamp, which is
+       the point: if every field is carried forward, every stamp is old, the
+       newest is old, and the verdict fires.
+    2. ``last_seen_at`` — the delivery sighting, i.e. the previous behaviour, so
+       a channel that records no capture time is unchanged.
+
+    ``data_captured_at`` is deliberately NOT a step in this chain; the comment at
+    the fall-through says why a dongle's "Datenstand" must not decide this.
+
+    Parsing is delegated to :func:`_age_s`, which handles both a ``datetime``
+    and an ISO string and returns None for anything else — so a missing or
+    unparseable stamp falls through to the next source rather than flagging.
+    A future-dated OCU clock still raises no false alarm (#465), but it can no
+    longer mask sane stamps beside it: among many stamps the future-dated ones
+    are ignored, and the negative age only stands when every stamp is one.
     """
-    raw = data.get("last_seen_at")
-    if isinstance(raw, datetime):
-        ts = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
-    elif isinstance(raw, str) and raw:
-        try:
-            ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-    else:
-        return None
-    return (datetime.now(tz=timezone.utc) - ts).total_seconds()
+    stamps = data.get("field_captured_ts")
+    if isinstance(stamps, dict):
+        # No emptiness test on the map itself: it would be redundant. An empty
+        # map and a map whose every stamp is unparseable both yield an empty
+        # ``ages``, and the guard below already falls through for that — a
+        # mutation run proved the extra condition unreachable.
+        ages = [a for a in (_age_s(v) for v in stamps.values()) if a is not None]
+        if ages:
+            # A future-dated stamp yields a NEGATIVE age, and a negative value
+            # wins min() outright: one broken clock among seventy would silence
+            # the verdict for the other sixty-nine. Measured before this guard
+            # existed: {+6 h, 90 h, 95 h} answered -6.0 h, so data_stale read
+            # false on a feed that had been frozen for four days.
+            #
+            # So the newest capture is taken from the stamps that are NOT in the
+            # future. Only when EVERY stamp is future-dated does the negative
+            # answer stand -- that is the deliberate #465 behaviour, where a car
+            # whose clock runs ahead raises no false alarm, and it is kept
+            # because then there is no sane stamp to prefer over it.
+            sane = [a for a in ages if a >= 0]
+            # smallest age == newest capture
+            return min(sane) if sane else min(ages)
+    # ``data_captured_at`` is deliberately NOT consulted. It is written in
+    # exactly one place -- the KWP2000 dongle (``plugandplay.py``) -- and that
+    # client documents it as refreshing "only when the car is driven / on
+    # ignition". Anchoring the verdict on it would flag every dongle car parked
+    # longer than the threshold, which is a parked car rather than a frozen
+    # feed: the indicator exists to say the feed broke, not that the owner took
+    # the train. Prash's decision, 2026-10-28. The dongle still surfaces that
+    # stamp as the per-sensor *Data captured at* attribute, where it answers the
+    # question it can actually answer.
+    return _age_s(data.get("last_seen_at"))
 
 
 # Stage-0 EU-DA observability — map the portal connector's ``last_no_data_reason``
@@ -410,6 +456,32 @@ def _is_selfhealing_poll_error(err: object) -> bool:
         TokenRefreshRetryError,
         UpstreamUnavailableError,
     )
+
+    # #1959 — a RAW transient network exception, not yet wrapped in an APIError.
+    #
+    # Every branch below tests an ``APIError``, and the status-0 branch
+    # additionally requires the ``"transient:"`` tag that only
+    # ``base._request`` writes. Five of the fifteen clients do not go through
+    # it — PlugAndPlay/WCG (the dongle cloud), Porsche, Skoda-official and
+    # VW-NA all build their own request path — so on those a connection reset
+    # arrives here as a bare ``ClientConnectorError``, matches nothing, and is
+    # escalated to the public Error Reporter as though it were our defect.
+    #
+    # That is what filed #1959: one "Connection reset by peer" against the
+    # dongle cloud, on one car, over two days. Ordinary internet, presented as
+    # a bug — and noise in that report teaches people to ignore the next one,
+    # which costs far more than the blip.
+    #
+    # The tuple is imported rather than restated so there is one list of what
+    # counts as transient. Guarding here rather than in each of the five
+    # clients is deliberate: this is the gate every poll error passes, so one
+    # check covers the clients that exist and the ones added later. (A standalone
+    # client still does not inherit base's *retry*, so a single blip still fails
+    # its poll — it just no longer asks the user to report it.)
+    from .cariad.api.base import _TRANSIENT_NET_ERRORS  # noqa: PLC0415
+
+    if isinstance(err, _TRANSIENT_NET_ERRORS):
+        return True
 
     # A transiently-rejected token refresh (invalid_client / server_error / 5xx /
     # network) is a backend hiccup that self-heals on the next poll, not our bug —
@@ -2269,6 +2341,24 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         _LOGGER.debug(
                             "VW Group Connect portal-safety %s (setup): %s",
                             mask_vin(vin), "; ".join(_setup_disc),
+                        )
+                    # #1954 (@InfObject, VW ID. Buzz) — the per-source
+                    # connectivity sensors exist only for keys present in this
+                    # map, and it was computed on the poll path only. So after
+                    # every setup and every reload they sat at "unavailable
+                    # (restored)" for up to a whole poll interval, which reads as
+                    # "this source is broken" rather than "not measured yet".
+                    # The compute is local-only — no await, no network — so there
+                    # was never a reason to defer it. Fail-soft like the poll
+                    # path: a compute hiccup must not sink setup.
+                    try:
+                        prepared_data["channel_status"] = (
+                            self._compute_channel_status(vin, prepared_data)
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        _LOGGER.debug(
+                            "channel-status compute skipped at setup (%s)",
+                            type(exc).__name__,
                         )
                     self.vehicles[vin] = self._apply_optimistic_hold(vin, prepared_data)
                     if hasattr(self, "vehicle_success"):

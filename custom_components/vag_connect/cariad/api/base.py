@@ -686,6 +686,14 @@ class CariadBaseClient:
             expires_at=_time.time() + 3300,
             strategy="data_act_portal",
         )
+        # #1942 — arming this fallback is the moment a refresh storm becomes
+        # impossible, so it is the moment to drop the flag that claims one.
+        # Clearing it in ``_refresh_tokens`` alone was not enough: the data
+        # path only calls that on a 401, and the native block that sends us
+        # here is a 403. So on the very car this fallback exists for, nothing
+        # re-entered the refresh path and the "raise your update interval"
+        # Repair stayed raised until a restart. Belt and braces, both places.
+        self.refresh_storm_detected = False
 
     def supplementary_readers(
         self, vin: str
@@ -1122,6 +1130,11 @@ class CariadBaseClient:
             expires_at=_time.time() + 3300,
             strategy="website_authproxy",
         )
+        # #1942 — same reasoning as the portal fallback above: this channel
+        # spends no refresh budget, so a storm flag set before the switch can
+        # no longer be true, and nothing is guaranteed to re-enter the refresh
+        # path to clear it.
+        self.refresh_storm_detected = False
 
     def get_website_proxy_cookies(self) -> list[dict[str, Any]]:
         """v2.14.3 — export the live website-authproxy session cookies.
@@ -1871,6 +1884,25 @@ class CariadBaseClient:
                 and self._tokens.strategy in _COOKIE_SESSION_STRATEGIES
             ):
                 _cs_args = (self._brand.name, self._tokens.strategy)
+                # #1942 (@clipse2004) — this return sits BEFORE the budget check
+                # and before all five paths that clear the storm flag, so a
+                # client that tripped the budget while it still held a real
+                # bearer and only then fell back to a cookie session — which
+                # happens in-session, seat_cupra arms the portal on a 403 —
+                # could never clear the flag again. The "raise your update
+                # interval" Repair then stayed raised for the rest of the
+                # client's life, recommending a higher number each time, with no
+                # storm behind it at all. That is the self-escalating card
+                # #1942 reports.
+                #
+                # Clearing it here is a measurement, not an assumption: this
+                # branch spends no slot of the budget, so there is no refresh
+                # storm by definition. ``account_lock_detected`` is deliberately
+                # NOT cleared alongside it — nothing on this path measured
+                # whether the account is locked, and a full re-authentication
+                # after a restart clears that one honestly.
+                if not for_command:
+                    self.refresh_storm_detected = False
                 if not self._cookie_session_refusal_reported:
                     self._cookie_session_refusal_reported = True
                     _LOGGER.info(

@@ -46,6 +46,337 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Behoben / Fixed
+
+- **A single stopped clock could switch the stale-data indicator off
+  completely.** Found by auditing the fix above before it shipped, so it was
+  never released — it is written down because the shape is worth knowing.
+
+  The corrected verdict takes the newest of up to seventy per-field capture
+  stamps. "Newest" is the smallest age, and a stamp dated in the **future**
+  has a negative age, so it won outright: one car reporting a clock six hours
+  ahead answered "six hours in the future" and the indicator read *not stale*
+  on a feed that had been frozen for four days. Sixty-nine correct stamps
+  silenced by one broken one.
+
+  The verdict now judges on the stamps that are not in the future. Only when
+  **every** stamp is future-dated does the negative answer stand, which keeps
+  the deliberate behaviour from [#465](https://github.com/its-me-prash/vwgroup-connect-ha/issues/465):
+  a car whose clock runs ahead raises no repair card, because then there is
+  nothing sane to prefer over it.
+  ([#1917](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1917))
+
+- **A parked car on a dongle is not a frozen feed, and no longer reports as
+  one.** Also caught before shipping.
+
+  The first version of the fix above consulted `data_captured_at` as a second
+  source. That field is written in exactly one place — the KWP2000 dongle —
+  and that client documents it as refreshing "only when the car is driven / on
+  ignition". So the fix silently gave the dongle channel a staleness verdict it
+  had never had, and every dongle car parked longer than three days would have
+  reported its data as outdated. Correct arithmetic, wrong question: the
+  indicator exists to say the feed broke, not that the owner took the train.
+
+  The dongle's "Datenstand" is no longer part of that decision. It is still
+  shown as the per-sensor *Data captured at* attribute, where it answers the
+  question it can answer.
+  ([#1917](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1917))
+
+- **The indicator that tells you a reading is old was reading the wrong
+  clock — and the capture time was sitting in the same snapshot all along.**
+
+  @tdrieshof measured it on an Audi Q6 e-tron (PPE, Belgium, portal-only): the
+  car was at **38 %**, Home Assistant showed **56 %**, and nothing in the
+  interface suggested the number was two days old. His diagnostic is what made
+  it checkable: the anchor the code read was about **22 hours** old while the
+  car's own capture, quoted in his own log, was about **47 hours** old.
+
+  A second report that looked identical turned out not to be this fault, and
+  that belongs here rather than in a footnote: a Q4 whose charge target read 80
+  against a setting of 50 looked exactly like a frozen feed, and the owner then
+  checked the portal archives himself and found the source data genuinely wrong
+  — readings four hours old against a fifteen-minute cadence, and a charging
+  speed of 660 km/h held for three hours. That is VW's data being wrong, not
+  ours being stale, and #1917 says so explicitly. It is named here because the
+  symptom is the same and the cause is not, which is the whole difficulty with
+  this class of bug.
+
+  The staleness verdict asked "how long since `last_seen_at`", and
+  `last_seen_at` says when the **delivery** was last seen. A channel refreshes
+  that stamp even when every value inside the delivery is old, so the age came
+  out as minutes no matter how stale the data was. The function's own docstring
+  called that field "the car's own data was captured", which is the whole bug
+  in one sentence.
+
+  What makes this one unusual: nothing had to be collected. `field_captured_ts`
+  — a per-field record of when the car captured each value — was already in the
+  snapshot, already feeding the per-sensor *Data captured at* attribute, and
+  already flipping that sensor's freshness label from "dataset" to "point". The
+  per-sensor attributes knew the capture time while the verdict did not. The
+  verdict now looks at it, preferring the **newest** capture (the question is
+  whether the car recorded anything recently), then the dongle's own
+  *Datenstand*, then the delivery sighting as before — so a channel that
+  records no capture time behaves exactly as it did.
+
+  A carried-forward field keeps its original capture stamp, which is the point:
+  if every field is carried forward, every stamp is old, the newest is old, and
+  the verdict fires.
+
+  **What this does not fix, so nobody updates expecting it.** Two things:
+
+  1. **The bar is 72 hours.** With the anchor corrected, @tdrieshof's two-day-old
+     data is now *measured* correctly — 47 hours against the 22 the old
+     anchor reported — and
+     still sits under that bar, so his indicator stays off. While the anchor was
+     wrong the bar never mattered, because the age was always minutes; fixing
+     the anchor is what makes the threshold a live question for the first time.
+     Three days is a long time for a feed that normally arrives every fifteen
+     minutes. Lowering it means more cards on more cars, so it is a decision
+     rather than a fix and it is not made here.
+  2. **The 40 carried-forward fields still have no age limit of their own.**
+     Only position has one, at 24 hours. This fixes the global verdict — "did
+     the car capture anything recently" — so a wholly frozen feed is flagged. A
+     single field freezing while others keep moving is a per-field problem and
+     is still open.
+
+  Pinned by 18 tests against seven mutations, including one that restores the
+  old anchor. Why no test caught it before, measured rather than assumed: of
+  the ten test files covering this area, not one set an old capture next to a
+  fresh delivery, and both tests that call the age helper directly pass it a
+  delivery sighting and nothing else. The function was covered only on its
+  fallback path.
+  ([#1917](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1917),
+  [#1364](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1364))
+
+- **The "raise your update interval" card could latch on for good and
+  recommend a bigger number every time — and v5.1.2 is what made that
+  possible.** This one is ours, introduced four hours after release, so it is
+  stated plainly rather than buried.
+
+  @clipse2004's CUPRA Formentor
+  ([#1942](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1942)):
+  he raised the interval, the card came back with a higher number, he raised it
+  again, and so on. The escalation looked like repeated storms. It was not —
+  the recommended value is derived from the *current* interval, so **one** flag
+  that never clears produces 40 → 55 → 60 all by itself.
+
+  The flag has exactly one setter and five clearers. The #1918 fix in v5.1.2
+  added an early return so a bearer-less cookie session stops paying for a
+  re-login that cannot work — correct in itself, but it sits *before* the
+  budget check and before all five of those clearers. So: a client trips the
+  budget while it still holds a real bearer (the flag goes up, rightly), the
+  native plane then answers with the attestation wall *in the same session*,
+  the portal fallback is armed, and from that moment every refresh leaves
+  through the early return. Nothing can clear the flag again for the life of
+  the client, and the card is raised on every poll with no storm behind it.
+  That is the one state in which the advice is pure noise: a cookie session
+  spends no refresh budget at all, so raising the interval cannot change
+  anything.
+
+  The branch now clears the flag on its way out. That is a measurement rather
+  than an assumption — it returns precisely *because* it will not spend a slot.
+  An account-lock flag is deliberately **not** cleared alongside it: nothing on
+  that path checked whether the account is locked, and inventing an all-clear is
+  the mistake this release is otherwise about.
+
+  **That alone was not enough, and the reason is worth writing down.** Clearing
+  it only on the next refresh assumes a next refresh happens. The data path asks
+  for one only on a **401** — and the native block that sends a SEAT or CUPRA car
+  to this fallback is a **403**. So on exactly the car the fallback exists for,
+  nothing came back to run the clear and the card stayed raised until a restart.
+  The flag is therefore now also dropped at the moment either read-only fallback
+  is armed, which is the moment a storm becomes impossible. The evidence for
+  that gap was already in this repository, in a test written days earlier that
+  pins "a 403 does not recover"; it simply had not been connected to this fix.
+
+  Why the #1918 tests could not see it: every one of them starts from a client
+  built moments earlier, where the flag has never been anything but False.
+  Asserting it is still False proves nothing about a flag that was True. Pinned
+  now by the sequence itself, against six mutations — the first of which is a
+  straight revert to the v5.1.2 code.
+
+- **A locked car reported its doors unlocked, because the boot was counted as a
+  door.** Found on the EU Data Act portal path and fixed there first; the entry
+  below it covers the four other places the same mistake turned out to be live,
+  North America included.
+
+  There the tailgate's lock state was folded
+  into the per-door `doors_locked` aggregation, where any unlocked member makes
+  the whole verdict *unlocked*. So an unlocked boot on an otherwise locked car
+  reported the doors as unlocked.
+
+  @Adcad1970's Audi A6 e-tron is where it surfaced
+  ([#1950](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1950)):
+  "Doors Locked" and "Trunk Locked" moved together — identical timestamps,
+  identical values — for hours while the car stayed locked.
+
+  The direction he could not see is the worse one. On a delivery carrying *only*
+  the tailgate's lock state, which this portal does send, the door verdict was
+  decided entirely by the boot — and a locked boot then asserted **doors
+  locked** on no door evidence at all. Measured before and after the change: a
+  tailgate-locked-only payload went from a fabricated *locked* to *unknown*, and
+  four locked doors plus an unlocked boot went from a wrong *unlocked* to
+  *locked*. Only the boot's **lock** state was ever involved; an *open* boot
+  never touched the door verdict, in either direction, and that boundary is now
+  pinned too.
+
+  The file already guarded against this exact hazard in the other dialect — the
+  bare `locked` field is read under a dotted spelling precisely so the trunk
+  state cannot mis-set `doors_locked` — and the historical `door_info.*` path
+  has always aggregated doors alone, sending the boot lock to `trunk_locked`
+  separately. Only the enum path got it wrong. The door verdict now comes from
+  door fields; a tailgate-only payload leaves it unknown rather than stating
+  something no field reported.
+
+  Two consequences worth knowing, because they are not all upside. On a car
+  whose portal delivery only ever carries the tailgate's lock state,
+  `doors_locked` is now *unknown* instead of wrong — so the named `locked` and
+  `unlocked` triggers cannot fire on it (an edge needs a real value on both
+  sides), the `is_locked` condition answers "not locked" for unknown, and on a
+  fresh install the "Doors Locked" sensor may not be created at all while
+  hide-empty is on. In exchange, leaving the field empty finally lets the
+  historical export path and the cross-channel gap-fill supply it — the old code
+  occupied the field with the boot's value and blocked both.
+
+  Why the existing portal tests never caught this is worth recording, because
+  the obvious guess is wrong. It is not that they all supplied door fields
+  alongside the tailgate: two of them feed a tailgate-only lock payload, which
+  is exactly the broken shape. They passed because **not one of them asserted**
+  `doors_locked` on it. The tests sat directly on the defect and said nothing.
+  A field can be exercised by several tests and pinned by none — it is pinned
+  now, against eight separate mutations.
+
+- **The same mistake was live in four more places, and one of them was six
+  brands wide.** After the fix above, the integration was swept for the pattern
+  "a closure that is not a door decides whether the doors are shut". Every hit
+  below was measured on the real parsers, not reasoned about, and each one broke
+  the same two ways: it inverted the verdict against the real doors, and on a
+  delivery carrying no door at all it fabricated a verdict from a single
+  non-door member.
+
+  **North America** (`doorStatus` and `exteriorStatus.doorLockStatus`): the boot
+  and the bonnet rode in the list that decides both *Doors Open* and *Doors
+  Locked*. Four locked doors plus an unlocked boot read as **unlocked**; worse,
+  a locked boot on a delivery with no door fields at all reported the doors
+  **locked** on no door evidence whatsoever. Both now come from door fields
+  only.
+
+  **Volkswagen EU — which Audi, Bentley, Lamborghini, VW Commercial and Audi NA
+  all inherit unchanged**: the bonnet and the boot sat in the door aggregate and
+  the roof sat in the window aggregate, so four closed doors plus an open bonnet
+  reported an open door, and an open roof reported an open window.
+
+  The part that makes this more than a tidy-up: **neither `hood_open` nor
+  `sunroof_open` was ever written anywhere in that file**, and North America had
+  no roof mapping at all. So the bonnet's and the roof's only effect on your
+  system was to corrupt an aggregate they did not belong to. They now populate
+  *Hood Open* and *Sunroof Open* — entities that already existed, already had
+  names, and had simply never received a value on those channels.
+
+  Kept deliberately: the per-closure *door* entities still include the boot and
+  the bonnet. Those are intended — the translation table has named keys for both
+  — so only the aggregate changed. The per-closure *window* entities lose their
+  roof members, which is the opposite case: nothing ever translated `roofCover`
+  or `sunRoofRear`, so they surfaced as window entities named after the raw
+  backend key.
+
+  The exclusions are deny-lists of known non-members, never allow-lists of door
+  names. Those dict-iteration paths exist so a firmware-specific door id works
+  without being enumerated anywhere, so an unrecognised spelling still counts as
+  a door exactly as before — a fix that quietly dropped the next new door would
+  be worse than the bug.
+
+  One existing test had to change, and it is worth naming: it asserted that a
+  raised bonnet plus an open boot meant "a door is open", on a fixture whose two
+  side doors were both closed. It pinned the defect in place. 30 tests now cover
+  the five sites, against 15 separate mutations.
+  ([#1950](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1950))
+
+- **"All closures secured" could say yes with the boot standing open.** It was
+  deciding from at most three doors — the data dictionary documents a safe-state
+  field for three of them and none at all for the front left — while the name
+  promised every closure. Measured: three secured doors plus an open tailgate
+  gave *secured*, with *Trunk Open* reading true on the same vehicle at the same
+  moment.
+
+  The arithmetic was widened to match the name rather than the name narrowed to
+  match the arithmetic. It now also requires that nothing we can see is standing
+  open, read from the boot's and the bonnet's **open** state — deliberately not
+  from their own safe-state fields, which is the trap: v4.7.11 removed those two
+  from this calculation after a live SEAT/CUPRA delivery reported the bonnet
+  "unsafe" while a second field in the same dataset said it was closed. The
+  dictionary documents no "safe" value for either of them, so that signal cannot
+  carry a verdict. A test now pins that case so the widening cannot resurrect it.
+
+  A closure we cannot see neither forces a *no* nor permits a *yes* on its own,
+  so the claim is "every closure this delivery reported is secured". **This can
+  change an automation's behaviour**: on a car that reports an open boot, an
+  entity that used to read secured will now read unsecured — which is the point,
+  but it is a value change rather than a cosmetic one.
+  ([#1950](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1950))
+
+- **Per-source connectivity sensors read "unavailable" for up to a whole poll
+  interval after every restart.** The map those sensors are created from was
+  computed on the poll path only, so after each setup and each reload they sat
+  at *unavailable (restored)* until the next scheduled poll. For a diagnostic
+  whose entire job is to say which sources a car is reaching, that reads as
+  "this source is broken" rather than "not measured yet".
+
+  @InfObject found it on a VW ID. Buzz
+  ([#1954](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1954)) and
+  brought the fix point with him: the computation is local-only — no await, no
+  network — so there was never a reason to defer it to a poll. It now runs
+  during setup as well, fail-soft, exactly as it does on the poll path.
+
+  Two paths it does **not** reach, so nobody reads more into it than is there:
+  a **companion (ADB) entry** skips that part of setup entirely — its first poll
+  is immediate rather than an interval away, so the window is much shorter, but
+  it is not zero — and a VIN whose setup read failed outright has nothing stored
+  to put the value in.
+
+- **A single "connection reset" on the dongle channel was offered to you as a
+  defect worth filing.** The poll handler decides whether an error is
+  self-healing — the car will be reachable again next poll — or something the
+  Error Reporter should offer to file. Every branch of that decision inspected
+  an `APIError`, which is the shape the shared request helper produces after it
+  has retried a network failure and given up. Five of the fifteen channel
+  clients do not go through that helper, and measuring what that actually means
+  took two attempts:
+
+  - the **dongle cloud** and **Skoda-official** convert nothing, so all four
+    transient classes reach the handler raw and count as a defect — this is the
+    gap that filed the issue;
+  - **VW North America** converts three of the four into a backend-unavailable
+    error the handler already understood, and leaks the fourth, a truncated
+    response body;
+  - **Porsche** retries and then raises the same tagged `APIError` the helper
+    does, so it was already covered.
+
+  An earlier version of this entry said a reset arrives raw on all five. It
+  does not, and the correction is the same kind of care this release is about:
+  the measurement that mattered was not "which clients inherit the helper" but
+  "which ones let the exception through".
+
+  That is what filed
+  [#1959](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1959): one
+  reset against the dongle cloud, on one car, over two days, on my own
+  installation. Ordinary internet, presented as a bug. The cost is not that one
+  issue — it is that noise in those reports teaches people to ignore the next
+  one, and the next one may be real.
+
+  The handler now recognises the transient network classes directly, and
+  **imports that list from the request helper instead of restating it**, so the
+  two cannot drift apart as one of them gains a class. The exclusion is by
+  exception class only, never by which client raised it, so a genuine failure on
+  the same channel is still reported.
+
+  **What this does not change**, so nobody reads more into it. The Error
+  Reporter has never filed anything on its own and still does not — it prepares
+  a report and you decide whether to send it; this changes what it *offers*, not
+  whether it asks. And a bare `OSError` is still reported: a connection reset
+  reaches this point wrapped in an `aiohttp` class, while a bare one can just as
+  easily be a local file or permission failure, which is worth knowing about.
+
 ## [5.1.2] - 2026-10-28 — Ten things it reported wrongly / Zehn Dinge, die es falsch gemeldet hat
 
 ### Behoben / Fixed
