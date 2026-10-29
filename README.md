@@ -14,7 +14,7 @@
   <a href="https://github.com/hacs/integration"><img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS Default"></a>
   <a href="https://github.com/its-me-prash/vwgroup-connect-ha/releases"><img src="https://img.shields.io/github/v/release/its-me-prash/vwgroup-connect-ha?include_prereleases" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL%20v3-blue.svg" alt="License"></a>
-  <a href="https://www.home-assistant.io"><img src="https://img.shields.io/badge/Home%20Assistant-2024.4%2B-blue" alt="Home Assistant"></a>
+  <a href="https://www.home-assistant.io"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fits-me-prash%2Fvwgroup-connect-ha%2Fmain%2Fhacs.json&query=%24.homeassistant&label=Home%20Assistant&prefix=%E2%89%A5&color=blue" alt="Minimum Home Assistant version"></a>
   <a href="https://www.home-assistant.io/docs/quality_scale/"><img src="https://img.shields.io/badge/quality_scale-platinum-d4af37" alt="Quality Scale Platinum"></a>
 </p>
 
@@ -24,20 +24,11 @@
 
 ---
 
-> ### 📛 Note on the rename
-> Previously published as **`vag-connect-ha`** (VAG = Volkswagen AG, standard DACH abbreviation).
-> Turns out that abbreviation reads *quite* differently to English speakers 😅
->
-> **What keeps working as before**: all entities (e.g. `sensor.audi_q4_battery_soc`),
-> all service-calls (`vag_connect.lock`, `vag_connect.show_vag` etc.), all automations,
-> the HACS install — **nothing breaks**. Marketing/display name changes, code internals
-> stay unchanged. See [`MIGRATION.md`](MIGRATION.md).
->
-> Huge thanks to the **Home Assistant UK** and **HA Ideas, Projects and Solutions**
-> communities for the heads-up — especially **Si Gregory**, **Ben Johnson**, and **Evets David**.
->
-> And a special shoutout to **Jordan Waeles**, whose `show_vag()` comment is now an officially
-> supported easter egg in this integration (`vag_connect.show_vag` service, see CHANGELOG v2.2.3).
+> 📛 Previously published as **`vag-connect-ha`**. Entities, service calls
+> (including the `vag_connect.show_vag` easter egg), automations and the HACS
+> install are all unchanged; only the display name moved. Thanks to
+> **Si Gregory**, **Ben Johnson**, **Evets David** and **Jordan Waeles**, who
+> prompted it; the full story is in [`MIGRATION.md`](MIGRATION.md).
 
 ---
 
@@ -49,25 +40,25 @@ Where the brand's backend still allows it, it also sends remote commands such as
 
 To keep working through Volkswagen's 2026 API changes it speaks **several read channels and falls back automatically** when one is blocked: the brand-native backends, the read-only **EU Data Act** vehicle-data portal, an opt-in `volkswagen.de` web channel (beta), an optional **Tibber** gap-fill, and a durable **passwordless** login for older Car-Net vehicles. It runs happily **alongside [evcc](https://evcc.io)** (see [docs/EVCC.md](docs/EVCC.md)) and needs **no add-on, broker or middleware container**. Home Assistant installs three small Python packages for it automatically; they are only used by the opt-in push and companion (ADB) channels.
 
-> 🎉 **Now available directly in HACS** — no custom repository needed.
+> **Available directly in HACS** — no custom repository needed.
 
 ---
 
 ## Highlights
 
 - **10 selectable Volkswagen Group brands/sources** in one integration: Audi, Volkswagen EU, Škoda, SEAT, CUPRA, VW US/Canada, Audi US/Canada, Porsche, Bentley, and **Audi plug&play (OBD dongle)** for older pre-connectivity Audis.
-- **Older Audis with no built-in connectivity, via an OBD dongle (new in 4.3.0)**: cars invisible to the CARIAD backend and the EU Data Act portal (pre-connectivity A4/A5, Touareg, e-up!, …) can be read through a TEXA plug&play dongle's cloud snapshot — odometer, 12 V battery voltage, warning lights, last parking position, plus factory master-data (engine power, displacement, colours, model designation). Read-only, in its own token silo.
+- **Older Audis with no built-in connectivity, via an OBD dongle**: cars invisible to the CARIAD backend and the EU Data Act portal (pre-connectivity A4/A5, Touareg, e-up!, …) can be read through a TEXA plug&play dongle's cloud snapshot — odometer, 12 V battery voltage, warning lights, last parking position, plus factory master-data (engine power, displacement, colours, model designation). Read-only, in its own token silo.
 - **Two-way control where the brand's backend allows it**: lock/unlock, climate, charging, target SoC. This is **per brand, not universal**. Check the table below before you count on a command.
-- **Škoda's in-car assistant "Laura" in Home Assistant (new in 3.0.0)**: ask about range, charging and trips as a service, or hand it to any conversation agent (the built-in Assist, OpenAI, Anthropic, Google, Ollama) as a tool it can call and chain. Read-only advice your automations can act on.
-- **Logbook events, firmware & calendar cards (new in 3.1.0)**: manufacturer push notifications become a per-vehicle `event` entity (Logbook + automations, no YAML bus filter), a read-only firmware `update` entity surfaces OTA status (Škoda today, no Install button), and two `calendar` entities lay out the charging schedule + service due-dates.
-- **Passwordless login option** (browser/device-code) for SEAT, CUPRA and Audi US/CA. No password stored in Home Assistant. Škoda moved to email + password in 3.0.1 when VW revoked its device-code grant, and **Audi (EU) followed in 4.7.0** when VW walled its app login behind on-device verification ([#1364](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1364)).
+- **Škoda's in-car assistant "Laura" in Home Assistant**: ask about range, charging and trips as a service, or hand it to any conversation agent (the built-in Assist, OpenAI, Anthropic, Google, Ollama) as a tool it can call and chain. Read-only advice your automations can act on.
+- **Logbook events, firmware & calendar cards**: manufacturer push notifications become a per-vehicle `event` entity (Logbook + automations, no YAML bus filter), a read-only firmware `update` entity surfaces OTA status (Škoda today, no Install button), and two `calendar` entities lay out the charging schedule + service due-dates.
+- **Passwordless login option** (browser/device-code) for SEAT, CUPRA and Audi US/CA. No password stored in Home Assistant. Škoda moved to email + password when VW revoked its device-code grant, and **Audi (EU) followed** when VW walled its app login behind on-device verification ([#1364](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1364)).
 - **Multi-channel with auto-fallback**: brand-native, EU Data Act portal, opt-in vw.de web, optional Tibber, durable Car-Net, and an OBD-dongle cloud reader for pre-connectivity Audis. One channel going down doesn't take your data dark.
-- **Companion channel (experimental, opt-in)**: when every backend path is shut, the integration can read your car by driving the official app on a spare Android phone. Three transports: **ADB over TCP**, the [**ADB Bridge add-on**](https://github.com/its-me-prash/vwgroup-app-adb-bridge) for modern phones, and — new in the 4.4.0 beta — a **companion agent app** the phone runs, which *calls Home Assistant* over an outbound long-poll so NAT, changing IPs and Wi-Fi client isolation stop mattering (the agent app is a separate artifact, not shipped yet; the protocol is in [docs/COMPANION_AGENT.md](docs/COMPANION_AGENT.md)). Volkswagen is verified against a real device; the other brands are read-only until a screen map is confirmed. Nothing is rooted and no app tokens are read. **Functional and technical design: [docs/COMPANION.md](docs/COMPANION.md).** Lock status is read-only here: lock/unlock is deliberately not offered over the companion channel, for security (see [docs/COMPANION_APP_MAP.md](docs/COMPANION_APP_MAP.md#lock-status-is-read-only-no-lockunlock)).
+- **Companion channel (experimental, opt-in)**: when every backend path is shut, the integration can read your car by driving the official app on a spare Android phone. Three transports: **ADB over TCP**, the [**ADB Bridge add-on**](https://github.com/its-me-prash/vwgroup-app-adb-bridge) for modern phones, and a **companion agent app** the phone runs, which *calls Home Assistant* over an outbound long-poll so NAT, changing IPs and Wi-Fi client isolation stop mattering (the agent app is a separate artifact, not shipped yet; the protocol is in [docs/COMPANION_AGENT.md](docs/COMPANION_AGENT.md)). Volkswagen is verified against a real device; the other brands are read-only until a screen map is confirmed. Nothing is rooted and no app tokens are read. **Functional and technical design: [docs/COMPANION.md](docs/COMPANION.md).** Lock status is read-only here: lock/unlock is deliberately not offered over the companion channel, for security (see [docs/COMPANION_APP_MAP.md](docs/COMPANION_APP_MAP.md#lock-status-is-read-only-no-lockunlock)).
 - **Resilient by design**: keeps the last known values and parking position through portal outages, filters bogus "no reading" sentinels, never lets the odometer jump backwards, and tells you when a failed login is the manufacturer's outage rather than your password.
 - **You control the poll rate**: a per-account **poll-interval slider** (a Number entity, in minutes) that automations can drive, created for every setup including read-only portal ones.
-- **GPS device tracker**, 100+ entities across multiple platforms, 30+ service calls, multi-vehicle per account, entity names in **12 languages**.
+- **GPS device tracker**, entities across every relevant Home Assistant platform, a broad service-call surface, several vehicles per account, and entity names in **12 languages** (listed below).
 - **Porsche runs on its own backend**, not the EU Data Act portal. The portal path structurally *excludes* Porsche, so portal-only tools can never cover it. The command code lives here, but the Porsche login itself is currently experimental (see the table).
-- **Vehicle Data Scout** auto-detects API drift and offers a one-click bug report — and from 3.0.0 its redacted diagnostics download carries the raw API responses too, so one attachment is everything needed to add support for a new field. **Quality Scale: Platinum.**
+- **Vehicle Data Scout** auto-detects API drift and offers a one-click bug report; its redacted diagnostics download carries the raw API responses too, so one attachment is everything needed to add support for a new field. **Quality Scale: Platinum.**
 
 ---
 
@@ -81,9 +72,9 @@ To keep working through Volkswagen's 2026 API changes it speaks **several read c
 | **VW EU** | 🔒 Read-only by default · ⚠️ commands = Car-Net **beta** | ✅ Full telemetry via EU Data Act portal | See the honest note below ([#584](https://github.com/its-me-prash/vwgroup-connect-ha/issues/584)) |
 | **CUPRA / SEAT** | ⛔ Commands blocked by VW | ✅ EU Data Act portal | OLA access revoked server-side in 2026 ([#464](https://github.com/its-me-prash/vwgroup-connect-ha/issues/464)) |
 | **Bentley** | ⏳ Two-way live-test gated | ⚠️ Untested | Offered on the Audi/IDK tenant, but no Bentley login has ever been observed — treat as experimental |
-| **Porsche** | ⚠️ Experimental | ⚠️ Experimental | Porsche Connect, its own backend. Login has been **confirmed working end-to-end on a real account** (2026-09), including handling the Auth0 passkey-enrollment screen and an in-app captcha step; a wrong-field-name bug that likely broke every command (lock/unlock/climate/charging/etc.) is fixed, and two-way control now covers geofence alerts, speed alerts, valet mode and saved destinations. None of it is live-confirmed against a real car yet — testers welcome ([#1337](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1337)) |
-| **Audi US/CA** | ⏳ Two-way live-test gated | ✅ Full | myAudi NA backend. US now reads from the regional `na` vehicle service and is **confirmed working on a live US Audi Q5** (58 entities) — thanks @pouwerkerk ([#1092](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1092)); Canada uses the EMEA service. Commands inherit the Audi two-way paths but aren't separately live-confirmed on NA yet ([#13](https://github.com/its-me-prash/vwgroup-connect-ha/issues/13)) |
-| **Audi plug&play** (OBD dongle) | ⛔ Read-only | ✅ Reads via dongle cloud | TEXA OBD dongle for pre-connectivity Audis; odometer, 12 V, lights, parking position + factory master-data. Read-only, own token silo (new in 4.3.0) |
+| **Porsche** | ⚠️ Experimental | ⚠️ Experimental | Porsche Connect, its own backend. Login has been **confirmed working end-to-end on a real account** (2026-09), including handling the Auth0 passkey-enrollment screen and an in-app captcha step; a wrong-field-name bug that likely broke every command (lock/unlock/climate/charging/etc.) is fixed, and two-way control now covers geofence alerts, speed alerts, valet mode and saved destinations. **Reads are now live-confirmed on a real car** — a Macan Electric signing in and reporting battery and charging state ([#1737](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1737)). Commands are still unconfirmed on a real car; testers welcome |
+| **Audi US/CA** | ⏳ Two-way live-test gated | ✅ Full | myAudi NA backend. US now reads from the regional `na` vehicle service and is **confirmed working on a live US Audi Q5** — thanks @pouwerkerk ([#1092](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1092)); Canada uses the EMEA service. Commands inherit the Audi two-way paths but aren't separately live-confirmed on NA yet ([#13](https://github.com/its-me-prash/vwgroup-connect-ha/issues/13)) |
+| **Audi plug&play** (OBD dongle) | ⛔ Read-only | ✅ Reads via dongle cloud | TEXA OBD dongle for pre-connectivity Audis; odometer, 12 V, lights, parking position + factory master-data. Read-only, own token silo |
 
 > **Honest note on VW EU control.** Volkswagen EU vehicles are **read-only by default**: you get full telemetry through the EU Data Act portal, but no remote commands. On **2026-08-18 VW disabled the login** the modern (CARIAD) two-way used, so that channel can no longer be set up. Remote commands for VW EU now exist **only as a durable Car-Net (MBB) two-way BETA**, and only for **legacy MQB / Car-Net** cars — an opt-in toggle, **not** a default feature. **MEB / ID-family cars (ID.3/4/5/7, Enyaq, Born, Q4 e-tron) have no command path at all** and are created read-only. The Car-Net beta is tracked in **[#584](https://github.com/its-me-prash/vwgroup-connect-ha/issues/584)** — testers welcome.
 
@@ -97,10 +88,10 @@ A few things are **structural** — they come from how Volkswagen's backends wor
 
 - **VW EU is read-only by default; commands are an MBB alpha for legacy cars only.** See the brand note above. **MEB / ID-family cars are read-only** — the durable Car-Net command path doesn't recognise them (it answers "Unknown user"), and VW's MEB backend exposes no equivalent. Setup detects this and creates a **read-only entry** (with a repair notice) instead of failing, so it's a known limit, not a silent one. ([#584](https://github.com/its-me-prash/vwgroup-connect-ha/issues/584))
 - **CUPRA / SEAT remote commands are blocked by VW.** Online-services (OLA) access for these brands was revoked server-side in 2026 (HTTP 403); a re-login or app-version bump won't restore it. Data still flows via the EU Data Act portal. ([#464](https://github.com/its-me-prash/vwgroup-connect-ha/issues/464))
-- **EU Data Act portal data is thin and varies by car.** VW publishes only a slice of fields today (often odometer + lock + charging, sometimes much more). It widens over time as VW expands the portal ahead of the Sept-2026 deadline — fields that read `unknown` today may fill in on their own, no change needed. ([#465](https://github.com/its-me-prash/vwgroup-connect-ha/issues/465))
+- **EU Data Act portal data is thin and varies by car.** VW publishes only a slice of fields today (often odometer + lock + charging, sometimes much more). It has widened over time as VW expands portal coverage — fields that read `unknown` today may fill in on their own, no change needed. ([#465](https://github.com/its-me-prash/vwgroup-connect-ha/issues/465))
 - **VW EU cars have no live GPS position over the EU Data Act portal.** Volkswagen Group Info Services has [confirmed in writing](https://github.com/its-me-prash/vwgroup-connect-ha/issues/13#issuecomment-5359744122) that the portal's continuous-export Data Dictionary lists a *Vehicle Location Tracking* cluster but **no defined data point for the car's current coordinates** (latitude / longitude) — so a VW EU car read only through the portal shows its location as `unknown`. This is a limit of VW's dataset, not the integration, and the manufacturer app's position endpoint has been closed to third parties. North-American VW / Audi and other brands with a working position endpoint are unaffected. ([#923](https://github.com/its-me-prash/vwgroup-connect-ha/issues/923))
 - **North America: VW and Audi both read now — Audi commands are the last unconfirmed piece.** **VW US/CA works, including Canada**, confirmed against a live Canadian ID.4: Canada signs in on its own server, and since the data-envelope fix it shows full telemetry ([#990](https://github.com/its-me-prash/vwgroup-connect-ha/issues/990)). **Audi US/CA now reads too**: US pulls from the regional `na` vehicle service, confirmed on a live US Audi Q5 (thanks @pouwerkerk, [#1092](https://github.com/its-me-prash/vwgroup-connect-ha/pull/1092)); Canada uses the EMEA service. Commands inherit the Audi two-way paths but aren't separately live-confirmed on North-American accounts yet ([#13](https://github.com/its-me-prash/vwgroup-connect-ha/issues/13)).
-- **Porsche is experimental but login now works on at least one real account.** Login was confirmed end-to-end in 2026-09, and commands/vehicle-data/two-way control (geofence, speed alerts, valet mode, destinations) are all implemented and grounded directly against the real app's own code — but none of it has been tried against a real car yet. If you use Porsche, testing this and reporting back is what confirms it. ([#1337](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1337))
+- **Porsche reads on a real car; Porsche commands do not yet.** Login was confirmed end-to-end on a real account, and a Macan Electric has since signed in and reported battery and charging state ([#1737](https://github.com/its-me-prash/vwgroup-connect-ha/issues/1737)). Commands and two-way control (geofence, speed alerts, valet mode, destinations) are implemented and grounded against the real app's own code, but none of them has been exercised against a real car. If you use Porsche, trying a command and reporting back is what confirms it.
 - **Push (near-real-time) updates are an opt-in BETA, off by default.** The MQTT (Škoda) and Firebase (Audi/VW, CUPRA/SEAT) channels are wired but not live-validated, and the brands increasingly gate them behind app attestation, which cannot be satisfied off-device. Leave them off unless you want to help test. Normal polling is the supported path.
 - **The Companion (ADB) channel is slow, phone-bound and experimental.** A screen walk takes seconds to tens of seconds, it needs a spare phone that stays reachable, its commands spend the car's daily request budget (and pause after the car refuses), and some values the VW app draws without readable text (for example a charging location's charge-limit sliders) cannot be read. Details and workarounds are in the [Companion design](docs/COMPANION.md#6-known-issues).
 
@@ -117,9 +108,11 @@ A few things are **structural** — they come from how Volkswagen's backends wor
 3. Restart Home Assistant.
 4. Go to **Settings → Devices & Services → Add Integration → VW Group Connect** and follow the login flow.
 
-<sup>Just merged into HACS default — if it isn't searchable yet, give the HACS index a little time to refresh, or add `its-me-prash/vwgroup-connect-ha` as a custom repository in the meantime.</sup>
+<sup>If it is not searchable in your HACS yet, let the HACS index refresh, or add `its-me-prash/vwgroup-connect-ha` as a custom repository in the meantime.</sup>
 
-**Minimum Home Assistant: `2024.4.0`.**
+**Minimum Home Assistant:** the badge at the top of this page. It is read live from
+this repository's `hacs.json`, which is the same value HACS enforces when you
+install — so the number here cannot drift away from the one that actually applies.
 
 ### Login options (the setup wizard has two paths)
 
@@ -147,10 +140,10 @@ For Volkswagen EU, **logging in is not enough** — VW only streams vehicle data
 1. **Add the integration:** choose **Portal (email + password)** and pick **Volkswagen EU**, then log in.
 2. **Complete any one-time prompt on VW's portal.** Open the VW data portal once in a browser or the brand app and finish whatever it asks: **accept terms, confirm consent, finish onboarding / region selection.** Headless access can't get past these — this is the `portal_interaction_required` case ([#527](https://github.com/its-me-prash/vwgroup-connect-ha/issues/527)).
 3. **Grant data-sharing consent.** On the portal, set **"Use of non-personal data" = Granted** (the EU Data Act data-sharing consent).
-4. **Don't go looking for a "continuous data request" switch — there isn't one.** The integration creates that request for each car itself, and it is **free**. Since v2.29.0 the request is created **without an expiry date**; earlier versions asked for one month, which is why some setups quietly went silent after about four weeks. If your data stopped and you set the account up before v2.29.0, remove the account from the integration and add it again once so a fresh request is created. Without a request the portal returns nothing for that VIN and the car shows up with no readings.
+4. **Don't go looking for a "continuous data request" switch — there isn't one.** The integration creates that request for each car itself, and it is **free**. It is created **without an expiry date**. Long-standing setups may still be running on a request that asked for one month, which is why some of them quietly went silent after about four weeks — if your data stopped and the account has been in place for a long time, remove it from the integration and add it again once so a fresh request is created. Without a request the portal returns nothing for that VIN and the car shows up with no readings.
 5. **Wait for the car to push a snapshot.** Even after all of the above, propagation takes time. The car can read **`offline` / `unknown` for a while — often until its next drive or wake, up to ~24 h** — before sensors populate. This is normal.
 
-The portal initially serves only a **slice of fields**, and that slice **widens over time** as VW expands portal coverage ahead of the Sept-2026 deadline — fields that read `unknown` today may fill in on their own. ([#465](https://github.com/its-me-prash/vwgroup-connect-ha/issues/465) · [#527](https://github.com/its-me-prash/vwgroup-connect-ha/issues/527) · [#567](https://github.com/its-me-prash/vwgroup-connect-ha/issues/567))
+The portal initially serves only a **slice of fields**, and that slice **widens over time** as VW expands portal coverage — fields that read `unknown` today may fill in on their own. ([#465](https://github.com/its-me-prash/vwgroup-connect-ha/issues/465) · [#527](https://github.com/its-me-prash/vwgroup-connect-ha/issues/527) · [#567](https://github.com/its-me-prash/vwgroup-connect-ha/issues/567))
 
 > **Full field list.** The complete official VW-Group data dictionary (every EU Data Act key -> field, description and unit) is in [docs/EU_DATA_ACT_DATA_DICTIONARY.md](docs/EU_DATA_ACT_DATA_DICTIONARY.md). A weekly workflow watches the portal's dictionary page and opens a pull request when VW publishes a newer version, so the table doesn't quietly go stale.
 
@@ -167,17 +160,17 @@ The portal initially serves only a **slice of fields**, and that slice **widens 
 - **Control:** lock/unlock, climate start/stop, charging start/stop, window heating, departure timers, set target SoC / temperature / max charge current, honk-and-flash (with a choice of duration, and lights-only or horn as well), wake, refresh, find charging stations, camping mode and active ventilation (Škoda cabin airing without heating) *(availability depends on brand & model)*.
 - **Device tracker:** GPS position for the Home Assistant map. A poll that comes back without coordinates keeps the last known parking position instead of losing it.
 - **Images:** vehicle renders where the brand provides them.
-- **Events, updates & calendars (new in 3.1.0):** a per-vehicle push-`event` entity (manufacturer notifications in the Logbook + automations), a read-only firmware **update** entity (Škoda OTA status — no Install button, the car flashes itself), and **charging-schedule + service calendars** that lay the timers and due-dates on a timeline.
+- **Events, updates & calendars:** a per-vehicle push-`event` entity (manufacturer notifications in the Logbook + automations), a read-only firmware **update** entity (Škoda OTA status — no Install button, the car flashes itself), and **charging-schedule + service calendars** that lay the timers and due-dates on a timeline.
 - **Settings:** a per-account **poll interval** slider in minutes, so an automation can poll more often while you're driving and back off overnight. It exists on every setup, read-only portal entries included.
 - **12 languages:** entity names are fully translated into English, German, French, Spanish, Italian, Dutch, Polish, Czech, Swedish, Danish, Norwegian and Finnish.
 
 > 💡 **Energy dashboard:** the charged-energy sensor is `total_increasing`, so add it to the Home Assistant **Energy dashboard** directly, or wrap it in a `utility_meter` helper for daily/monthly charged-energy totals. Use the cumulative **charged-energy (kWh)** sensor for this — not the per-100 km efficiency sensors (those are averages, not meters).
 >
-> **Or let the integration build the monthly meters for you (opt-in, off by default, new in 4.7.0):** turn on **Auto-create monthly meters** in Options and it wires up `utility_meter` helpers that total your charged energy and mileage per calendar month, one per car. The toggle only appears when a car actually reports a matching sensor. These are permanent helpers — switching it back off stops new ones being created but leaves the ones already made (remove those under **Settings → Devices & Services → Helpers**).
+> **Or let the integration build the monthly meters for you (opt-in, off by default):** turn on **Auto-create monthly meters** in Options and it wires up `utility_meter` helpers that total your charged energy and mileage per calendar month, one per car. The toggle only appears when a car actually reports a matching sensor. These are permanent helpers — switching it back off stops new ones being created but leaves the ones already made (remove those under **Settings → Devices & Services → Helpers**).
 
 ### Services
 
-The integration ships **30+ service calls** (`vag_connect.*`), many of them brand-specific — *availability depends on brand & model*. Among them: `lock` / `unlock`, `start_climatisation` / `stop_climatisation`, `start_charging` / `stop_charging`, `set_target_soc`, `set_climatisation_temperature`, `set_departure_timer`, `start_window_heating` / `stop_window_heating`, `flash_lights`, `wake_vehicle`, `refresh_vehicle`, `refresh_cloud_cache`, `find_charging_stations`, `start_climate_control`, `engine_start` / `engine_stop` (Audi ICE), `start_ventilation` / `stop_ventilation`, `start_aux_heating` / `stop_aux_heating` (auxiliary / parking heater — SEAT/CUPRA, Škoda, and VW/Audi on a two-way command channel, where the car is equipped), `send_destination` (SEAT/CUPRA/Škoda) and `update_charging_settings` (SEAT/CUPRA), the Škoda `ask_assistant` (see below), `set_location_target_soc` and `set_seat_heating`, `open_app`, `execute_vehicle_action`, `abrp_send`, and the `show_vag` easter egg.
+The integration ships a large set of service calls (`vag_connect.*`), many of them brand-specific — *availability depends on brand & model*. Among them: `lock` / `unlock`, `start_climatisation` / `stop_climatisation`, `start_charging` / `stop_charging`, `set_target_soc`, `set_climatisation_temperature`, `set_departure_timer`, `start_window_heating` / `stop_window_heating`, `flash_lights`, `wake_vehicle`, `refresh_vehicle`, `refresh_cloud_cache`, `find_charging_stations`, `start_climate_control`, `engine_start` / `engine_stop` (Audi ICE), `start_ventilation` / `stop_ventilation`, `start_aux_heating` / `stop_aux_heating` (auxiliary / parking heater — SEAT/CUPRA, Škoda, and VW/Audi on a two-way command channel, where the car is equipped), `send_destination` (SEAT/CUPRA/Škoda) and `update_charging_settings` (SEAT/CUPRA), the Škoda `ask_assistant` (see below), `set_location_target_soc` and `set_seat_heating`, `open_app`, `execute_vehicle_action`, `abrp_send`, and the `show_vag` easter egg.
 
 ---
 
@@ -214,7 +207,7 @@ A native **Live Activity** (Lock Screen + Dynamic Island) that counts down to yo
 
 **Import the shipped blueprint** *"Live Activity — EV charging countdown (iOS)"* (`blueprints/automation/vag_connect/live_activity_charging_countdown.yaml`), pick your vehicle's charging / SoC / charge-finish sensors and your phone's `notify.mobile_app_*` service. It starts when charging begins, refreshes as the ETA and SoC move, and clears when charging stops.
 
-> 📱 **Requirements:** the Home Assistant Companion app with **Live Activities** enabled (iOS 17.2+, HA Core 2026.7+). Live Activities are currently a **Labs** feature in the app's **TestFlight** build — enable them under Labs. A Live Activity needs a token handshake between the app and Home Assistant, so your phone has to be able to reach HA (locally or via a remote connection) when charging starts. This ships now so you're ready the day it leaves TestFlight. **iOS 2026.8 adds iPad support and a redesigned Live Activity — the same blueprint drives both.**
+> 📱 **Requirements:** the Home Assistant Companion app with **Live Activities** enabled (iOS 17.2 or newer, HA Core 2026.7 or newer). Where you switch them on depends on your app build — look under the app's own settings, including **Labs** if your build still has them there. A Live Activity needs a token handshake between the app and Home Assistant, so your phone has to be able to reach HA (locally or via a remote connection) when charging starts. The same blueprint drives iPhone and iPad.
 
 ---
 
@@ -234,7 +227,7 @@ The **ABRP** and **iOS Live Activity** blueprints described above ship from the 
 
 ---
 
-## Škoda AI assistant ("Laura") — new in 3.0.0
+## Škoda AI assistant ("Laura")
 
 MyŠkoda's own in-car assistant, **Laura**, is available inside Home Assistant.
 Ask her about range, charging and trips with the `vag_connect.ask_assistant`
