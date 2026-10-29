@@ -46,6 +46,36 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Behoben / Fixed
+
+- **A repair card from a car you no longer own could keep your full VIN, and
+  put it in the diagnostics file you attach to a public issue (#923).** Found by
+  @skornehl, who spotted it in his own export and stripped it out by hand before
+  posting — twice, on two separate exports.
+
+  A repair's id lands verbatim in Home Assistant's own config-entry
+  diagnostics, where this integration's VIN redaction never sees it. That was
+  fixed twice before, for `historical_timeout` (#1768) and for `stale_data`
+  (#1626): new cards carry a masked VIN, and the legacy raw-VIN id is deleted
+  when that same card is next raised or cleared. For `stale_data` the clear runs
+  on every poll, so the cleanup was judged unnecessary — a sweep for it "would
+  be dead code", and a test pinned that decision.
+
+  **It is only dead code while the car still polls.** His second vehicle is sold
+  and disabled. Its card was raised on 14 September carrying the raw VIN; the
+  vehicle never polls again, so the clear never runs, so the id survived two
+  releases. Two further holes had the same shape: the sweep took a list of VINs,
+  and a sold car is in no list the code can build, and the call sat inside the
+  cache-restore branch, so an entry with no cached snapshot never swept at all.
+
+  The sweep now walks the integration's own issue registry and deletes any id
+  ending in something VIN-shaped, on every setup, needing neither a VIN list nor
+  a list of card families — so a family added later that forgets to mask is
+  covered too. It matches the real VIN alphabet (ISO 3779 has no I, O or Q), so
+  a 17-character tail that is not a VIN is left alone, and a masked id is never
+  touched: that card may be showing a live warning. Nothing here changes what a
+  card says or when it appears.
+
 ### Hinzugefügt / Added
 
 - **The closure and lock sensors now say when the car captured them (#1950).**
