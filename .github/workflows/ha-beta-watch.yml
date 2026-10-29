@@ -117,10 +117,22 @@ jobs:
           # Home Assistant version, for the reason the Škoda watcher documents —
           # looking only at open issues re-files the same thing every night once
           # a maintainer has closed it as evaluated.
+          # #1965 — match the END of the title, not a substring anywhere in it.
+          # Titles are "...our checks: ${VERSION}", and "2026.11.0" is a
+          # substring of "2026.11.0b0". A substring test therefore finds the
+          # BETA's issue when the FINAL release breaks something, decides the
+          # report already exists, and stays silent about the release that
+          # actually matters. Verified against the real stored title: substring
+          # suppresses 2026.11.0 (wrong) while endswith reports it (right), and
+          # both still suppress a true duplicate of 2026.11.0b0 and both still
+          # report 2026.11.0b1. Piped to jq rather than gh's --jq because the
+          # version has to arrive as a quoted argument instead of being spliced
+          # into the filter text.
           existing="$(gh issue list --state all \
             --search 'in:title Home Assistant beta breaks' \
             --json title \
-            --jq "[.[] | select(.title | contains(\"${VERSION}\"))] | length")"
+            | jq --arg v "${VERSION}" \
+                 '[.[] | select(.title | endswith(": " + $v))] | length')"
           if [ "${existing}" != "0" ]; then
             echo "Tracking issue for ${VERSION} already exists (open or closed) — nothing to do."
             exit 0

@@ -148,9 +148,19 @@ _CONNECTED_SERVICES_CAP = 40
 
 # #909 — cooldown for a gateway-DENIED MBB operationList. The denial is an
 # enrolment/authorization verdict, so it only changes when the user fixes
-# something in the brand app; 12 h matches the positive cache's TTL and still
-# picks up such a fix on the same day. A command pre-flight (force_refresh)
-# bypasses it, so an explicit user action is never blocked by the cooldown.
+# something in the brand app; 12 h matches the positive cache's TTL. A command
+# pre-flight (force_refresh) bypasses it, so an explicit user action is never
+# blocked by the cooldown.
+#
+# #584 (@Mjukes) — do NOT read this TTL as "and then we ask again". Since the
+# early-September change, the same denial also records the durable
+# ``mbb_no_legacy_vins`` verdict, and on an entry whose primary channel is
+# read-only (portal or volkswagen.de reads, MBB only for commands) the warm-up
+# skips such a car outright, so the cooldown expiring changes nothing there. On
+# an entry whose primary IS the MBB channel the periodic read does come back
+# after the TTL. Both shapes exist, which is why neither the log line nor this
+# comment may promise a timer: a fix is picked up on a restart, a reload or a
+# command attempt in either case.
 _MBB_OPLIST_DENY_TTL = timedelta(hours=12)
 
 # v2.24.2 — the long cooldown above is only justified for the explicit
@@ -2237,8 +2247,9 @@ class VWEUClient(CariadBaseClient):
         denied_until = self._mbb_oplist_denied.get(vin)
         if not force_refresh and denied_until is not None and denied_until > now:
             _LOGGER.debug(
-                "MBB operationList ***%s: denied by the gateway, not retrying "
-                "until %s", vin[-6:], denied_until.isoformat(timespec="seconds"),
+                "MBB operationList ***%s: denied by the gateway, skipping this "
+                "car (cooldown to %s)",
+                vin[-6:], denied_until.isoformat(timespec="seconds"),
             )
             return None
 
@@ -2303,8 +2314,10 @@ class VWEUClient(CariadBaseClient):
                     "has not run). It is not an expired token — refreshing or "
                     "re-authenticating won't change it. MBB commands stay hidden "
                     "for this car; readings from volkswagen.de or the EU Data Act "
-                    "portal are not affected. Not retried for %d h.",
-                    vin[-6:], int(_MBB_OPLIST_DENY_TTL.total_seconds() // 3600),
+                    "portal are not affected. The periodic check does not ask "
+                    "again while this verdict stands; a restart, a reload or a "
+                    "command attempt does.",
+                    vin[-6:],
                 )
                 # #584 — cohort-only, read-only leapfrog probe. The legacy
                 # operationList/v3 is dead for this car, but the shipping app

@@ -48,6 +48,51 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ### Behoben / Fixed
 
+- **The Charging Port sensor could fail to be created at all, with "Error
+  adding entity" in the log instead of an unavailable sensor (#1739).** Reported
+  by @awood-ops on 5.1.3.
+
+  That sensor is an enum: its `device_class` declares exactly two permitted
+  states, `connected` and `disconnected`, and Home Assistant refuses to add an
+  entity whose state is not one of them. The value is normalised before it
+  reaches the sensor, and the normaliser is what failed — it was guarded by
+  `isinstance(value, str)`, so it only ever inspected values that were already
+  the right type. Anything else passed through untouched and straight into the
+  sensor. A barrier that only examines the type it already trusts is not a
+  barrier.
+
+  It now normalises by value rather than by type, so any value that is not one
+  of the two tokens becomes unavailable, whatever its type. The one connector
+  that can currently emit a non-string is the VW EU parser, which assigns the
+  backend's raw `plugConnectionState` when it is not text; normalising
+  downstream covers that path and any future one. A bare `true` is deliberately
+  not mapped to `connected`: either polarity could be meant, and guessing would
+  be a fabricated reading. The separate Charging Cable boolean carries that
+  signal.
+
+  The reporter's own traceback is still outstanding, so this is the defect the
+  code proves, not yet a confirmed explanation of his car.
+
+- **A log line promised that a car refused by the legacy gateway would be
+  retried after twelve hours, which for many setups never happens (#584).**
+  Pointed out by @Mjukes, who read the line and reasonably expected a retry.
+
+  The twelve hours are real — they are the cooldown on the denial — but the
+  same denial also records a durable "no legacy enrolment" verdict, and since a
+  change in early September the periodic check skips a car carrying that verdict
+  outright when the entry reads through another channel. On such an entry the
+  cooldown expiring changes nothing. On an entry whose primary channel *is* the
+  legacy one, the read does come back. Both shapes exist, so no single number
+  was ever true for everyone.
+
+  The line no longer names a duration. It now says that the periodic check does
+  not ask again while the verdict stands, and that a restart, a reload or a
+  command attempt does — which is accurate for both shapes. The explanatory
+  comment above the constant and the debug line for repeat hits made the same
+  promise and were corrected with it. Anyone searching their logs for
+  `Not retried for 12 h` will no longer find it; `operationList` and
+  `gw.error.authentication` are unchanged.
+
 - **A repair card from a car you no longer own could keep your full VIN, and
   put it in the diagnostics file you attach to a public issue (#923).** Found by
   @skornehl, who spotted it in his own export and stripped it out by hand before

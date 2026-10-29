@@ -7521,9 +7521,22 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         # 'invalid'/'unsupported' sentinel. Lowercase it and keep only the two
         # real values; anything else → None (unavailable) rather than an
         # untranslatable raw string. plug_connected (the boolean) is unaffected.
+        # #1739 (@awood-ops) — the guard below used to be ``isinstance(_plug_state,
+        # str)``, which let a NON-string past untouched. The sensor's device_class
+        # is ENUM with exactly the two options above, and Home Assistant refuses to
+        # add an entity whose state is not among them, so a raw non-string surfaced
+        # as "Error adding entity sensor.<car>_charging_port" at setup rather than
+        # as an unavailable sensor. A barrier that only inspects the type it already
+        # trusts is not a barrier. The single producer that can emit one today is
+        # the else branch in vw_eu.py (``d.plug_state = plug_state`` on whatever the
+        # backend put at charging.plugStatus.value.plugConnectionState); normalizing
+        # by value instead of by type covers that path and every future one.
+        # Coercing rather than mapping is deliberate: a bare True could mean either
+        # polarity, and picking one would be the fabrication Hard Rule #8 forbids —
+        # so it lands on None, and plug_connected (the boolean) carries that signal.
         _plug_state = data.get("plug_state")
-        if isinstance(_plug_state, str):
-            _psl = _plug_state.strip().lower()
+        if _plug_state is not None:
+            _psl = str(_plug_state).strip().lower()
             data["plug_state"] = _psl if _psl in ("connected", "disconnected") else None
 
         # Fuel-level % from a user-configured tank capacity + the litres reading.

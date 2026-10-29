@@ -847,7 +847,18 @@ def sweep_legacy_raw_vin_issues(
       it is given comes from the vehicles that still exist.
 
     The per-VIN deletes below stay as a cheap belt: they cost two idempotent
-    calls per car and they also cover an id whose tail is not the last segment.
+    calls per car, and they also cover a VIN the alphabet check below rejects
+    (lower case, or a stray I/O/Q), because they match on the real VIN string
+    instead of testing its shape — for the cars this entry still knows.
+
+    What they do NOT cover, contrary to what this sentence claimed until #923:
+    an id whose VIN is not the last underscore-separated segment. They only
+    rebuild the two canonical forms, both of which end in the VIN. The registry
+    scan below has the same blind spot (it tests ``rpartition("_")[2]``), so a
+    hypothetical middle-of-the-id VIN is caught by neither. Measured: no
+    producer in this tree, now or anywhere in its history, has ever put a raw
+    VIN in any position but last, so this is a hardening gap and not a live
+    leak — stated here so the next reader does not have to re-measure it.
     """
     for vin in vins:
         if not isinstance(vin, str) or not vin:
