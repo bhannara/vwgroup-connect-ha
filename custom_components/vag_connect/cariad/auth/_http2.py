@@ -126,14 +126,27 @@ class _H2Response:
         when the caller forces one; ``errors`` mirrors aiohttp so a caller that
         asked to tolerate junk still gets a string rather than an exception.
         """
+        # #1965 — the locals are annotated rather than returned directly.
+        # ``httpx`` is not part of Home Assistant's dependency set, and CI runs
+        # mypy with ``--ignore-missing-imports``, so on an environment that
+        # does not happen to have it installed ``self._resp`` resolves to
+        # ``Any`` and ``--warn-return-any`` rejects all three returns from a
+        # function declared ``-> str``. Both expressions genuinely produce a
+        # ``str`` — ``bytes.decode`` always does, and ``httpx.Response.text``
+        # is documented to — so naming the type is a statement of fact, not a
+        # silencer. It also keeps the file honest on an environment where httpx
+        # IS installed, where mypy checks the annotation against the real type.
         if encoding:
-            return self._resp.content.decode(encoding, errors=errors)
+            decoded: str = self._resp.content.decode(encoding, errors=errors)
+            return decoded
         try:
-            return self._resp.text
+            body: str = self._resp.text
+            return body
         except UnicodeDecodeError:
             if errors == "strict":
                 raise
-            return self._resp.content.decode("utf-8", errors=errors)
+            fallback: str = self._resp.content.decode("utf-8", errors=errors)
+            return fallback
 
     async def json(
         self,

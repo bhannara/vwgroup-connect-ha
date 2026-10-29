@@ -198,27 +198,87 @@ def _gap_fill_from_export(
 
 
 def _capture_age_s(data: dict[str, Any]) -> float | None:
-    """Seconds since the car's own data was captured (``last_seen_at``), or None.
+    """Seconds since the car itself captured the data, or None.
 
-    ``last_seen_at`` is channel-heterogeneous — a ``datetime`` from the BFF/Škoda
-    paths, an ISO string from the EU Data Act portal (the very channel that
-    freezes), or absent. Handle both real types; anything else / missing → None so
-    the caller does not flag it. A future-dated OCU clock yields a negative age
-    (< any threshold) → no false alarm. (#465)
+    #1917 (@tdrieshof, @HeinMelissen) — this used to read ``last_seen_at`` and
+    its own docstring called that "the car's own data was captured". Measured on
+    a portal-only Audi Q6 e-tron: the car was at 38 %, Home Assistant showed
+    56 %, and nothing said the reading was two days old. The old anchor read
+    about 22 hours where the newest per-field capture read about 47.
+
+    #1950 (@Adcad1970) — and this paragraph used to explain that gap WRONGLY, by
+    saying ``last_seen_at`` is "when the delivery was last seen". It is not a
+    delivery clock. Every writer of it in this tree takes a CAPTURE stamp and
+    none takes a poll time: ``compute_connection_state``
+    (``cariad/_util.py``, freshest ``carCapturedTimestamp`` across sub-objects),
+    ``_eu_data_act.py`` (freshest per-point capture or the vehicle's own capture
+    field, capped to the odometer's own capture by #529),
+    ``_data_act_scraper.py``, ``skoda_official.py`` and
+    ``_website_authproxy.py`` (advance-only to a supplementary channel's
+    freshest read). What makes it the wrong clock for THIS verdict is which
+    capture it is: the freshest stamp known for the car, from any of those
+    sources, which can be hours newer than the values actually surfaced. So the
+    verdict was anchored on a real capture time — just not on the capture time
+    of the data it was judging.
+
+    **The capture time was already in the snapshot.** ``field_captured_ts`` is a
+    documented provenance map (see ``_PROVENANCE_MAPS``); it already supplies the
+    per-sensor ``data_captured_at`` attribute and flips ``freshness_source`` from
+    "dataset" to "point". The per-sensor attributes knew the capture time while
+    the staleness verdict did not. This function now looks at it.
+
+    Preference, best evidence first:
+
+    1. the **newest** entry of ``field_captured_ts`` — "when did the car last
+       capture anything". A carried-forward field keeps its OLD stamp, which is
+       the point: if every field is carried forward, every stamp is old, the
+       newest is old, and the verdict fires.
+    2. ``last_seen_at`` — the car's freshest capture across channels, i.e. the
+       previous behaviour, so a channel that records no per-field capture time
+       is unchanged.
+
+    ``data_captured_at`` is deliberately NOT a step in this chain; the comment at
+    the fall-through says why a dongle's "Datenstand" must not decide this.
+
+    Parsing is delegated to :func:`_age_s`, which handles both a ``datetime``
+    and an ISO string and returns None for anything else — so a missing or
+    unparseable stamp falls through to the next source rather than flagging.
+    A future-dated OCU clock still raises no false alarm (#465), but it can no
+    longer mask sane stamps beside it: among many stamps the future-dated ones
+    are ignored, and the negative age only stands when every stamp is one.
     """
-    raw = data.get("last_seen_at")
-    if isinstance(raw, datetime):
-        ts = raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
-    elif isinstance(raw, str) and raw:
-        try:
-            ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
-    else:
-        return None
-    return (datetime.now(tz=timezone.utc) - ts).total_seconds()
+    stamps = data.get("field_captured_ts")
+    if isinstance(stamps, dict):
+        # No emptiness test on the map itself: it would be redundant. An empty
+        # map and a map whose every stamp is unparseable both yield an empty
+        # ``ages``, and the guard below already falls through for that — a
+        # mutation run proved the extra condition unreachable.
+        ages = [a for a in (_age_s(v) for v in stamps.values()) if a is not None]
+        if ages:
+            # A future-dated stamp yields a NEGATIVE age, and a negative value
+            # wins min() outright: one broken clock among seventy would silence
+            # the verdict for the other sixty-nine. Measured before this guard
+            # existed: {+6 h, 90 h, 95 h} answered -6.0 h, so data_stale read
+            # false on a feed that had been frozen for four days.
+            #
+            # So the newest capture is taken from the stamps that are NOT in the
+            # future. Only when EVERY stamp is future-dated does the negative
+            # answer stand -- that is the deliberate #465 behaviour, where a car
+            # whose clock runs ahead raises no false alarm, and it is kept
+            # because then there is no sane stamp to prefer over it.
+            sane = [a for a in ages if a >= 0]
+            # smallest age == newest capture
+            return min(sane) if sane else min(ages)
+    # ``data_captured_at`` is deliberately NOT consulted. It is written in
+    # exactly one place -- the KWP2000 dongle (``plugandplay.py``) -- and that
+    # client documents it as refreshing "only when the car is driven / on
+    # ignition". Anchoring the verdict on it would flag every dongle car parked
+    # longer than the threshold, which is a parked car rather than a frozen
+    # feed: the indicator exists to say the feed broke, not that the owner took
+    # the train. Prash's decision, 2026-10-28. The dongle still surfaces that
+    # stamp as the per-sensor *Data captured at* attribute, where it answers the
+    # question it can actually answer.
+    return _age_s(data.get("last_seen_at"))
 
 
 # Stage-0 EU-DA observability — map the portal connector's ``last_no_data_reason``
@@ -410,6 +470,32 @@ def _is_selfhealing_poll_error(err: object) -> bool:
         TokenRefreshRetryError,
         UpstreamUnavailableError,
     )
+
+    # #1959 — a RAW transient network exception, not yet wrapped in an APIError.
+    #
+    # Every branch below tests an ``APIError``, and the status-0 branch
+    # additionally requires the ``"transient:"`` tag that only
+    # ``base._request`` writes. Five of the fifteen clients do not go through
+    # it — PlugAndPlay/WCG (the dongle cloud), Porsche, Skoda-official and
+    # VW-NA all build their own request path — so on those a connection reset
+    # arrives here as a bare ``ClientConnectorError``, matches nothing, and is
+    # escalated to the public Error Reporter as though it were our defect.
+    #
+    # That is what filed #1959: one "Connection reset by peer" against the
+    # dongle cloud, on one car, over two days. Ordinary internet, presented as
+    # a bug — and noise in that report teaches people to ignore the next one,
+    # which costs far more than the blip.
+    #
+    # The tuple is imported rather than restated so there is one list of what
+    # counts as transient. Guarding here rather than in each of the five
+    # clients is deliberate: this is the gate every poll error passes, so one
+    # check covers the clients that exist and the ones added later. (A standalone
+    # client still does not inherit base's *retry*, so a single blip still fails
+    # its poll — it just no longer asks the user to report it.)
+    from .cariad.api.base import _TRANSIENT_NET_ERRORS  # noqa: PLC0415
+
+    if isinstance(err, _TRANSIENT_NET_ERRORS):
+        return True
 
     # A transiently-rejected token refresh (invalid_client / server_error / 5xx /
     # network) is a backend hiccup that self-heals on the next poll, not our bug —
@@ -1508,6 +1594,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             TermsAndConditionsError,
             MarketingConsentError,
             TwoFactorRequiredError,
+            TokenRefreshRetryError,
             RateLimitError,
         )
 
@@ -1836,25 +1923,33 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 "for %s", len(self.vehicles), brand,
             )
 
-            # The sweep v4.12.0's changelog promised and never shipped. A
-            # repair id carrying a raw VIN survives the upgrade that stopped
-            # new ones being created, because the only deletes live inside the
-            # raise and clear of that same repair — neither of which fires for
-            # an export parked in "timed_out". Restored VINs are exactly the
-            # ones that can still hold such a card, so this is where it runs.
-            try:
-                from .repairs import (  # noqa: PLC0415
-                    sweep_legacy_raw_vin_issues,
-                )
+        # The sweep v4.12.0's changelog promised and never shipped. A repair id
+        # carrying a raw VIN survives the upgrade that stopped new ones being
+        # created, because the only deletes live inside the raise and clear of
+        # that same repair — neither of which fires for an export parked in
+        # "timed_out", nor for a vehicle that has stopped polling at all.
+        #
+        # #923 (@skornehl) — this used to sit inside the cache-restore branch
+        # above, on the reasoning that restored VINs are the ones that can still
+        # hold such a card. Both halves of that were too narrow: an entry with
+        # no cached snapshot never swept at all, and the card he found belonged
+        # to a sold, disabled vehicle that is in no VIN list this code can
+        # build. The sweep now walks the issue registry itself, so it needs
+        # neither the branch nor a complete VIN list, and it runs on every
+        # setup.
+        try:
+            from .repairs import (  # noqa: PLC0415
+                sweep_legacy_raw_vin_issues,
+            )
 
-                sweep_legacy_raw_vin_issues(
-                    self.hass, self.entry.entry_id, list(self.vehicles.keys())
-                )
-            except Exception:  # noqa: BLE001
-                # Tidying old cards must never be the reason an entry fails to
-                # set up. The leak is bad; an integration that will not start
-                # is worse, and the card stays deletable by hand either way.
-                _LOGGER.debug("legacy repair-id sweep skipped", exc_info=True)
+            sweep_legacy_raw_vin_issues(
+                self.hass, self.entry.entry_id, list(self.vehicles.keys())
+            )
+        except Exception:  # noqa: BLE001
+            # Tidying old cards must never be the reason an entry fails to set
+            # up. The leak is bad; an integration that will not start is worse,
+            # and the card stays deletable by hand either way.
+            _LOGGER.debug("legacy repair-id sweep skipped", exc_info=True)
 
         # b13 — setup flags an entry when the user asked for MBB commands but
         # the command channel could not be minted (the portal entry was created
@@ -2112,7 +2207,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
             try:
                 vins = await self._cariad_client.get_vehicles()
                 _enum_ok = True
-            except AuthenticationError:
+            except (AuthenticationError, TokenRefreshRetryError):
                 # v2.21.1 (#875) — persisted IDK/legacy tokens can no longer be
                 # refreshed (VW's device-attestation wall 403s the refresh). We
                 # skipped the fresh login above because they weren't a portal
@@ -2130,6 +2225,29 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 # channel is degraded (per-VIN reads resume via the poll loop's
                 # supplementary revive). No EU Data Act channel → [] → re-raise →
                 # original invalid_credentials behaviour (strict no-op).
+                # #1947 follow-up — the catch above ALSO takes the transient
+                # classification, and that is the whole fix. #1318 (2026-09-01)
+                # reclassified every non-invalid_grant refresh rejection as
+                # TokenRefreshRetryError, a deliberate SIBLING of
+                # AuthenticationError so a blip would stop bouncing users to a
+                # reauth prompt. This ladder was built 13 days earlier
+                # (3d5b542d, 2026-08-19) and was never widened, so from that day
+                # the very failure it exists for walked straight past it: the
+                # catch-all at the end of async_setup returns False, and the
+                # entry point renders that as "No vehicles found for this
+                # account. The login itself worked" — on an account whose car is
+                # plainly visible in the portal. @mortenmoulder called that
+                # message "very strange", and he was right; it was never about
+                # vehicles.
+                # The sibling classification is correct for the POLL loop, which
+                # keeps the entry live on its last snapshot while a hiccup
+                # passes. Setup has no snapshot, so "transient" there means
+                # retrying the same dead token file every 160 s with nothing in
+                # the loop able to change the outcome. The only exit users found
+                # was deleting the entry, which works solely because it wipes
+                # .storage/vag_connect_tokens_<entry_id>. Widened here and ONLY
+                # here: _is_selfhealing_poll_error keeps its classification, and
+                # TokenRefreshRetryError stays a sibling (both pinned by tests).
                 try:
                     if persisted is None or persisted_is_portal:
                         raise
@@ -2151,7 +2269,12 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                     await self._arm_supplementary_channels()
                     vins = await self._cariad_client.get_vehicles()
                     _enum_ok = True
-                except AuthenticationError:
+                except (AuthenticationError, TokenRefreshRetryError):
+                    # #1947 follow-up — the retry can be refused the same
+                    # transient way (the shared id_token login path raises it
+                    # too, see auth/_mbboauth.py), so this rung needs the same
+                    # pair. Without it the fresh login above only moves the dead
+                    # end one step later and the portal is still never asked.
                     vins = await self._enumerate_via_eu_data_act_fallback()
                     if not vins:
                         raise
@@ -2269,6 +2392,24 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         _LOGGER.debug(
                             "VW Group Connect portal-safety %s (setup): %s",
                             mask_vin(vin), "; ".join(_setup_disc),
+                        )
+                    # #1954 (@InfObject, VW ID. Buzz) — the per-source
+                    # connectivity sensors exist only for keys present in this
+                    # map, and it was computed on the poll path only. So after
+                    # every setup and every reload they sat at "unavailable
+                    # (restored)" for up to a whole poll interval, which reads as
+                    # "this source is broken" rather than "not measured yet".
+                    # The compute is local-only — no await, no network — so there
+                    # was never a reason to defer it. Fail-soft like the poll
+                    # path: a compute hiccup must not sink setup.
+                    try:
+                        prepared_data["channel_status"] = (
+                            self._compute_channel_status(vin, prepared_data)
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        _LOGGER.debug(
+                            "channel-status compute skipped at setup (%s)",
+                            type(exc).__name__,
                         )
                     self.vehicles[vin] = self._apply_optimistic_hold(vin, prepared_data)
                     if hasattr(self, "vehicle_success"):
@@ -2515,93 +2656,6 @@ class VagConnectCoordinator(DataUpdateCoordinator):
     # attribute so any port of the silent-recovery watchdog logic
     # carries the marker into the destination repo.
     _PROVENANCE_WATCHDOG = "watchdog_silentauth_provenance_n2vpw9c3_2026"
-
-    async def _maybe_run_stale_watchdog(self) -> None:
-        """v2.8.0 — silent re-authenticate when hybrid_full goes stale.
-
-        VW EU users on the `hybrid_full` strategy have no real
-        refresh_token (Play Integrity walls the BFF token endpoint).
-        The access_token expires after ~2 hours and the integration
-        starts returning failed polls. Before this watchdog, the
-        symptom was a silently dead integration that users had to
-        reload by hand (a common pattern in the upstream VW HA
-        community ran on template-trigger automations).
-
-        Gating logic:
-          - Active strategy must be `hybrid_full`. Other strategies
-            (`device_grant`, `classic`, `data_act_portal`) handle
-            their own refresh paths via refresh_token / re-fetch.
-          - All VINs must have failure_count >= 2 (single transient
-            hiccups do not trigger).
-          - All VINs must have last_good_at older than
-            2x scan_interval (ensures we are not racing a temporary
-            network blip).
-
-        On match, fires `self._cariad_client.authenticate()` again
-        using the same Brand-ID credentials stored in entry.data. On
-        success, the access_token is refreshed in place and the next
-        poll cycle succeeds without user interaction. On failure,
-        we fall through to standard behaviour, the existing outer
-        exception handler then triggers the HA reauth dialog.
-        """
-        if not self._started or self._cariad_client is None:
-            return
-        tokens = getattr(self._cariad_client, "_tokens", None)
-        if tokens is None or getattr(tokens, "strategy", "") != "hybrid_full":
-            return
-        if not getattr(self, "vehicle_last_good_at", None):
-            return
-        if not self.vehicle_last_good_at:
-            return
-
-        interval_s = max(
-            int(
-                self.entry.options.get(CONF_SCAN_INTERVAL)
-                or self.entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-            ) * 60,
-            _CC_MIN_INTERVAL_S,
-        )
-        stale_threshold_s = 2 * interval_s
-        now = datetime.now(tz=timezone.utc)
-
-        all_stale = True
-        for vin, last_good in self.vehicle_last_good_at.items():
-            elapsed = (now - last_good).total_seconds()
-            if elapsed < stale_threshold_s:
-                all_stale = False
-                break
-            if self.vehicle_failure_count.get(vin, 0) < 2:
-                all_stale = False
-                break
-        if not all_stale:
-            return
-
-        _LOGGER.info(
-            "VW Group Connect: hybrid_full watchdog — every VIN stale for "
-            ">%ds with >=2 consecutive failures. Triggering silent "
-            "re-authenticate before next poll attempt.",
-            stale_threshold_s,
-        )
-        try:
-            await self._cariad_client.authenticate()
-        except Exception as err:  # noqa: BLE001
-            _LOGGER.warning(
-                "VW Group Connect: watchdog silent re-auth raised %s. "
-                "Falling through to standard poll behaviour; if the "
-                "next poll also fails, the existing reauth handler "
-                "will surface to the user.",
-                type(err).__name__,
-            )
-            return
-        # Reset failure counts so the next poll iteration has a
-        # clean slate; otherwise we would re-trigger the watchdog
-        # immediately even after a successful re-auth.
-        for vin in list(self.vehicle_failure_count.keys()):
-            self.vehicle_failure_count[vin] = 0
-        _LOGGER.info(
-            "VW Group Connect: watchdog silent re-auth succeeded, "
-            "failure counts cleared. Next poll should recover."
-        )
 
     async def _ensure_data_act_custom_request_kickoff(
         self, *, force: bool = False
@@ -4854,9 +4908,6 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         Nightly reduction (22:00–05:00): doubles the polling interval to reduce
         API calls and avoid rate limits during low-activity hours.
 
-        v2.8.0 — pre-flight `_maybe_run_stale_watchdog()` runs before
-        each poll attempt. See that method's docstring.
-
         #968 companion startup — ``first_immediate`` skips the sleep before the
         first iteration only (companion entries, whose setup read is deferred).
         """
@@ -4976,25 +5027,11 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 await asyncio.sleep(sleep_s)
             if not self._started:
                 break
-            # v2.8.0 — pre-flight watchdog. If we are on the
-            # hybrid_full strategy and every VIN has been stale +
-            # failing for >2x scan_interval, silently re-authenticate
-            # before attempting the next poll. No-op for every other
-            # strategy and for healthy hybrid_full sessions.
-            try:
-                await self._maybe_run_stale_watchdog()
-            except Exception as wd_err:  # noqa: BLE001
-                # Watchdog must NEVER break the poll loop.
-                _LOGGER.debug(
-                    "VW Group Connect: stale watchdog itself raised %s, "
-                    "ignored.",
-                    type(wd_err).__name__,
-                )
             try:
                 # Lazy-initialise per-VIN tracking so tests bypassing __init__ work.
                 if not hasattr(self, "vehicle_success"):
                     self.vehicle_success = {}
-                # #1434 — this background hybrid_full loop is the actual periodic
+                # #1434 — this background loop is the actual periodic
                 # driver (update_interval is None; _async_update_data is not the
                 # periodic path here), so it needs its own _active_vins() filter.
                 # Without it, a vehicle the user disabled in HA keeps being polled
@@ -6674,11 +6711,19 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                 return False
             tokens = getattr(client, "_tokens", None)
             strategy = getattr(tokens, "strategy", "") if tokens else ""
-            # Hybrid_full / data_act_portal / device_grant(_portal) all flow
-            # through the browser-based DAG/IDP path (v2.6.0+).
+            # data_act_portal / device_grant(_portal) all flow through the
+            # browser-based DAG/IDP path (v2.6.0+).
+            #
+            # ``hybrid_full`` used to be listed here as a fourth. It was never
+            # a strategy any sign-in writes: the hybrid flow takes it as a
+            # keyword and stamps nothing, so its token set carries the empty
+            # default. Comparing against it could only ever be False, and this
+            # observation reported one capability short for those entries.
+            # The same dead value also gated a recovery watchdog, which is why
+            # tests/test_strategy_labels_are_paired.py now pins every consumed
+            # label against the ones the code can actually produce.
             return strategy in (
-                "hybrid_full", "data_act_portal", "device_grant",
-                "device_grant_portal",
+                "data_act_portal", "device_grant", "device_grant_portal",
             )
 
         # Vehicle-data capabilities: scan VINs for a non-None field.
@@ -7476,9 +7521,22 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         # 'invalid'/'unsupported' sentinel. Lowercase it and keep only the two
         # real values; anything else → None (unavailable) rather than an
         # untranslatable raw string. plug_connected (the boolean) is unaffected.
+        # #1739 (@awood-ops) — the guard below used to be ``isinstance(_plug_state,
+        # str)``, which let a NON-string past untouched. The sensor's device_class
+        # is ENUM with exactly the two options above, and Home Assistant refuses to
+        # add an entity whose state is not among them, so a raw non-string surfaced
+        # as "Error adding entity sensor.<car>_charging_port" at setup rather than
+        # as an unavailable sensor. A barrier that only inspects the type it already
+        # trusts is not a barrier. The single producer that can emit one today is
+        # the else branch in vw_eu.py (``d.plug_state = plug_state`` on whatever the
+        # backend put at charging.plugStatus.value.plugConnectionState); normalizing
+        # by value instead of by type covers that path and every future one.
+        # Coercing rather than mapping is deliberate: a bare True could mean either
+        # polarity, and picking one would be the fabrication Hard Rule #8 forbids —
+        # so it lands on None, and plug_connected (the boolean) carries that signal.
         _plug_state = data.get("plug_state")
-        if isinstance(_plug_state, str):
-            _psl = _plug_state.strip().lower()
+        if _plug_state is not None:
+            _psl = str(_plug_state).strip().lower()
             data["plug_state"] = _psl if _psl in ("connected", "disconnected") else None
 
         # Fuel-level % from a user-configured tank capacity + the litres reading.

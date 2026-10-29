@@ -248,19 +248,26 @@ def test_an_endless_chain_raises_instead_of_spinning():
 
 
 def test_the_login_hops_that_can_reach_the_callback_all_use_the_follower():
-    """Four hops can land on the callback; the two before credentials cannot.
+    """Five hops can land on the callback; the two before credentials cannot.
 
-    Asserted on source because the alternative is driving four full login
+    Asserted on source because the alternative is driving five full login
     flows to prove a routing decision. The counter-check is the second
     assertion: if someone re-introduces library redirect following on one of
-    the four, the count moves and this fails.
+    the five, the count moves and this fails.
+
+    It was four until #1947. The portal added a sign-in page that asks for the
+    address and the password together, so there is now a FIFTH hop that carries
+    credentials — the one-shot POST for that layout — and it has to walk the
+    chain by hand for the same reason the other four do. This count moving is
+    the test doing its job: it forced the new hop to be a deliberate addition
+    rather than something that quietly started following redirects in a library.
     """
     import inspect
 
     from custom_components.vag_connect.cariad.auth import _eu_data_act as mod
 
     src = inspect.getsource(mod)
-    assert src.count("await self._follow_login_redirects(") == 4
+    assert src.count("await self._follow_login_redirects(") == 5
     # step 1 (authorize) and step 2 (identifier) still let aiohttp follow —
     # neither chain reaches the portal callback.
     assert src.count("allow_redirects=True") == 2

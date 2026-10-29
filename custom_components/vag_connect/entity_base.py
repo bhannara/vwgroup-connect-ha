@@ -332,6 +332,47 @@ class VagConnectEntity(CoordinatorEntity[VagConnectCoordinator]):
         source = sources.get(key)
         return source if isinstance(source, str) else None
 
+    def _eu_da_freshness_attributes(self) -> dict[str, Any]:
+        """v4.7.11 (#465/#529/#1218 parity ADOPT) — per-value freshness for an
+        entity whose value THIS poll came from the EU Data Act portal.
+
+        Portal readers expose per-value freshness; ours names it per entity. Only
+        for EU-DA-sourced values (``field_sources[data_key] == "eu_data_act"``) —
+        every other channel is a live read and the poll time is already the
+        capture time. Adds ``data_captured_at`` (ISO, only when a genuine
+        per-point timestamp survived onto this field), ``freshness_source``
+        ("point" when it did, else "dataset" for the ~15-min batch floor) and
+        ``ambiguous_reading`` (True only when the source shipped disagreeing
+        candidates under one capture time). Deliberately NO age_minutes or dataset
+        filename: both change every poll and would bloat the recorder.
+
+        #1950 (@Adcad1970) — this lived on ``VagConnectSensor`` until now, so
+        only numeric sensors carried it. His point: the closure and lock binary
+        sensors (doors, locks, windows, boot, bonnet) carried no capture time at
+        all, which is exactly where "as of when?" is worth asking — a door state
+        from hours ago looks identical to a fresh one. It is the same question
+        and the same answer for every platform, so it belongs here, once, rather
+        than copied per platform. The gate does the limiting by itself: a
+        description without a ``data_key``, or a value from any other channel,
+        gets nothing. That is why no platform had to be touched to gain it.
+        """
+        desc = getattr(self, "entity_description", None)
+        data_key = (getattr(desc, "data_key", "") if desc is not None else "") or ""
+        if not data_key or self._field_source != "eu_data_act":
+            return {}
+        attrs: dict[str, Any] = {}
+        captured = self._vehicle.get("field_captured_ts")
+        iso = captured.get(data_key) if isinstance(captured, dict) else None
+        if isinstance(iso, str) and iso:
+            attrs["data_captured_at"] = iso
+            attrs["freshness_source"] = "point"
+        else:
+            attrs["freshness_source"] = "dataset"
+        ambiguous = self._vehicle.get("ambiguous_fields")
+        if isinstance(ambiguous, dict) and isinstance(ambiguous.get(data_key), str):
+            attrs["ambiguous_reading"] = True
+        return attrs
+
     def _platform_attributes(self) -> dict[str, Any] | None:
         """Per-platform attributes, merged into ``extra_state_attributes``.
 
@@ -387,6 +428,10 @@ class VagConnectEntity(CoordinatorEntity[VagConnectCoordinator]):
         read_at = self._companion_read_at
         if read_at is not None:
             attrs["companion_read_at"] = datetime.fromtimestamp(read_at, tz=timezone.utc).isoformat()
+
+        fresh = self._eu_da_freshness_attributes()
+        if fresh:
+            attrs.update(fresh)
 
         own = self._platform_attributes()
         if own:

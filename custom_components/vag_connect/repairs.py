@@ -780,6 +780,21 @@ def clear_issue_historical_timeout(hass: HomeAssistant, entry_id: str, vin: str)
     ir.async_delete_issue(hass, DOMAIN, f"{entry_id}_historical_timeout_{vin}")
 
 
+# ISO 3779 excludes I, O and Q so a VIN can never be misread as 1, 0 or 2.
+# Matching the alphabet rather than ``[A-Z0-9]`` keeps the test honest: a
+# 17-character tail containing an O is not a VIN and must not be deleted.
+_VIN_ALPHABET = frozenset("ABCDEFGHJKLMNPRSTUVWXYZ0123456789")
+
+
+def _looks_like_raw_vin(value: str) -> bool:
+    """True for an unmasked 17-character VIN body.
+
+    ``mask_vin`` produces ``***`` plus the last six characters, which is nine
+    characters and starts with a marker, so a masked id can never match this.
+    """
+    return len(value) == 17 and all(c in _VIN_ALPHABET for c in value)
+
+
 def sweep_legacy_raw_vin_issues(
     hass: HomeAssistant, entry_id: str, vins: Iterable[str]
 ) -> None:
@@ -803,19 +818,76 @@ def sweep_legacy_raw_vin_issues(
     the "fix" — uploaded a diagnostics file to a public issue that still
     carried the full VIN in that id.
 
-    This is the sweep the changelog promised. One shot at setup, per known
-    VIN; ``async_delete_issue`` is idempotent, so an id that was never there
-    costs nothing.
+    This is the sweep the changelog promised. One shot at setup;
+    ``async_delete_issue`` is idempotent, so an id that was never there costs
+    nothing.
 
-    Scoped to ``historical_timeout`` deliberately. The ``stale_data`` sibling
-    (#1626) has the same id shape but not the same gap: its clear runs inside
-    ``_enrich`` on every poll, so its legacy id is swept on the first poll
-    after an upgrade. A sweep for it would be dead code.
+    #923 (@skornehl) — this used to be scoped to ``historical_timeout``, and
+    said so with a reason: the ``stale_data`` sibling (#1626) has the same id
+    shape "but not the same gap: its clear runs inside ``_enrich`` on every
+    poll, so its legacy id is swept on the first poll after an upgrade. A sweep
+    for it would be dead code."
+
+    **That reason holds only while the car still polls.** He runs two vehicles,
+    one of them sold and disabled. Its ``stale_data`` card was raised on
+    2026-09-14 with the raw VIN; the vehicle never polls again, so ``_enrich``
+    never runs for it, so the legacy delete never fires. Two upgrades later the
+    full VIN was still sitting in that id, and he had to strip it out by hand
+    before attaching his diagnostics to a public issue. The "dead code"
+    judgement was sound for a live car and wrong for a dead one — which is the
+    only kind of car that can keep such a card.
+
+    So the sweep no longer trusts a list of families or a list of VINs. It
+    walks this integration's own issue registry and deletes anything whose id
+    ends in something VIN-shaped. That covers:
+
+    - every id family, including ones added later that forget to mask;
+    - a VIN this entry no longer knows at all — sold, disabled, or removed from
+      the account — which the per-VIN loop could never reach, because the list
+      it is given comes from the vehicles that still exist.
+
+    The per-VIN deletes below stay as a cheap belt: they cost two idempotent
+    calls per car, and they also cover a VIN the alphabet check below rejects
+    (lower case, or a stray I/O/Q), because they match on the real VIN string
+    instead of testing its shape — for the cars this entry still knows.
+
+    What they do NOT cover, contrary to what this sentence claimed until #923:
+    an id whose VIN is not the last underscore-separated segment. They only
+    rebuild the two canonical forms, both of which end in the VIN. The registry
+    scan below has the same blind spot (it tests ``rpartition("_")[2]``), so a
+    hypothetical middle-of-the-id VIN is caught by neither. Measured: no
+    producer in this tree, now or anywhere in its history, has ever put a raw
+    VIN in any position but last, so this is a hardening gap and not a live
+    leak — stated here so the next reader does not have to re-measure it.
     """
     for vin in vins:
         if not isinstance(vin, str) or not vin:
             continue
         ir.async_delete_issue(hass, DOMAIN, f"{entry_id}_historical_timeout_{vin}")
+        ir.async_delete_issue(hass, DOMAIN, f"{entry_id}_stale_data_{vin}")
+
+    # The registry scan. Deliberately NOT scoped to this entry_id: an id left
+    # behind by an entry that was removed and re-added carries the old
+    # entry_id, so nothing would ever sweep it. A raw VIN in one of our issue
+    # ids is a leak no matter which entry wrote it, and no current code path
+    # creates one — both families mask — so a VIN-shaped tail here is by
+    # definition legacy.
+    try:
+        registry = ir.async_get(hass)
+        keys = list(getattr(registry, "issues", None) or {})
+    except Exception:  # noqa: BLE001
+        # No registry to walk (or a shape we do not recognise). The per-VIN
+        # deletes above have already run, so this degrades to the old
+        # behaviour rather than failing setup.
+        return
+    for key in keys:
+        if not isinstance(key, tuple) or len(key) != 2:
+            continue
+        domain, issue_id = key
+        if domain != DOMAIN or not isinstance(issue_id, str):
+            continue
+        if _looks_like_raw_vin(issue_id.rpartition("_")[2]):
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 # ─── v2.0.0 Repair-Flow Handler ──────────────────────────────────────────

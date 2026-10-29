@@ -5528,51 +5528,18 @@ class VagConnectSensor(VagConnectEntity, SensorEntity):
         if description.suggested_display_precision is not None:
             self._attr_suggested_display_precision = description.suggested_display_precision
 
-    def _eu_da_freshness_attributes(self) -> dict[str, Any]:
-        """v4.7.11 (#465/#529/#1218 parity ADOPT) — per-value freshness for a
-        sensor whose value THIS poll came from the EU Data Act portal.
-
-        Portal readers expose per-value freshness; ours names it per entity. Only
-        for EU-DA-sourced values (``field_sources[data_key] == "eu_data_act"``) —
-        every other channel is a live read and the poll time is already the
-        capture time. Adds ``data_captured_at`` (ISO, only when a genuine
-        per-point timestamp survived onto this field), ``freshness_source``
-        ("point" when it did, else "dataset" for the ~15-min batch floor) and
-        ``ambiguous_reading`` (True only when the source shipped disagreeing
-        candidates under one capture time). Deliberately NO age_minutes or dataset
-        filename: both change every poll and would bloat the recorder."""
-        data_key = self.entity_description.data_key
-        sources = self._vehicle.get("field_sources")
-        if not data_key or not isinstance(sources, dict):
-            return {}
-        if sources.get(data_key) != "eu_data_act":
-            return {}
-        attrs: dict[str, Any] = {}
-        captured = self._vehicle.get("field_captured_ts")
-        iso = captured.get(data_key) if isinstance(captured, dict) else None
-        if isinstance(iso, str) and iso:
-            attrs["data_captured_at"] = iso
-            attrs["freshness_source"] = "point"
-        else:
-            attrs["freshness_source"] = "dataset"
-        ambiguous = self._vehicle.get("ambiguous_fields")
-        if isinstance(ambiguous, dict) and isinstance(ambiguous.get(data_key), str):
-            attrs["ambiguous_reading"] = True
-        return attrs
-
     def _platform_attributes(self) -> dict[str, Any] | None:
-        """Merge the key-specific attributes with per-value EU-DA freshness.
+        """The key-specific attributes for this sensor.
 
-        v4.7.11 — freshness (see ``_eu_da_freshness_attributes``) is added only
-        for sensors whose value this poll came from the EU Data Act portal; every
-        other sensor is untouched. Key-specific attributes win on the (unlikely)
-        name clash."""
-        own = self._key_platform_attributes() or {}
-        fresh = self._eu_da_freshness_attributes()
-        if fresh:
-            fresh.update(own)
-            return fresh
-        return own or None
+        v4.7.11 added per-value EU Data Act freshness here, merged with the
+        key-specific attributes. #1950 (@Adcad1970) moved
+        ``_eu_da_freshness_attributes`` onto ``VagConnectEntity`` so every
+        platform carries it — a door's capture time is as worth having as a
+        battery reading's — and the base property merges it BEFORE calling this
+        hook. So the behaviour here is unchanged, including the precedence:
+        key-specific attributes still win on the (unlikely) name clash, because
+        they are merged last."""
+        return self._key_platform_attributes()
 
     def _key_platform_attributes(self) -> dict[str, Any] | None:
         """v1.14.0 (#24) — Surface ``recent_trips`` (last 5 short-term

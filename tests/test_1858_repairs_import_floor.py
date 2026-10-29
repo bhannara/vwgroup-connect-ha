@@ -172,7 +172,16 @@ def test_hacs_declares_a_floor_that_was_measured_not_guessed() -> None:
     # And the lower constraint has to be true of the import we rely on.
     from homeassistant.util.ssl import SSL_ALPN_HTTP11_HTTP2, client_context
 
-    assert SSL_ALPN_HTTP11_HTTP2 == ("http/1.1", "h2")
+    # #1965 — compared as a set on purpose. This assertion exists to show the
+    # ALPN-bucketed context we ask for by name is really there; the ORDER
+    # inside the bucket is Home Assistant's protocol preference, not ours. We
+    # pass the constant to ``client_context`` untouched and never read its
+    # order (grep: the only uses are the import and that call). HA 2026.11
+    # flipped it to ``("h2", "http/1.1")``, which prefers HTTP/2 — if anything
+    # an improvement for this channel — and the old equality turned that into
+    # a red test. Pinning a neighbour's preference is how a cosmetic upstream
+    # change arrives looking like a breakage.
+    assert set(SSL_ALPN_HTTP11_HTTP2) == {"http/1.1", "h2"}
     assert client_context is not None
 
 
