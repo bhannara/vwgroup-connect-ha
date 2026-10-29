@@ -201,12 +201,25 @@ def _capture_age_s(data: dict[str, Any]) -> float | None:
     """Seconds since the car itself captured the data, or None.
 
     #1917 (@tdrieshof, @HeinMelissen) — this used to read ``last_seen_at`` and
-    its own docstring called that "the car's own data was captured". It is not:
-    ``last_seen_at`` says when the delivery was last SEEN, which a channel
-    refreshes even when every value inside it is old. So the one verdict whose
-    job is to flag a frozen feed was anchored on the wrong clock. Measured on a
-    portal-only Audi Q6 e-tron: the car was at 38 %, Home Assistant showed 56 %,
-    and nothing said the reading was two days old.
+    its own docstring called that "the car's own data was captured". Measured on
+    a portal-only Audi Q6 e-tron: the car was at 38 %, Home Assistant showed
+    56 %, and nothing said the reading was two days old. The old anchor read
+    about 22 hours where the newest per-field capture read about 47.
+
+    #1950 (@Adcad1970) — and this paragraph used to explain that gap WRONGLY, by
+    saying ``last_seen_at`` is "when the delivery was last seen". It is not a
+    delivery clock. Every writer of it in this tree takes a CAPTURE stamp and
+    none takes a poll time: ``compute_connection_state``
+    (``cariad/_util.py``, freshest ``carCapturedTimestamp`` across sub-objects),
+    ``_eu_data_act.py`` (freshest per-point capture or the vehicle's own capture
+    field, capped to the odometer's own capture by #529),
+    ``_data_act_scraper.py``, ``skoda_official.py`` and
+    ``_website_authproxy.py`` (advance-only to a supplementary channel's
+    freshest read). What makes it the wrong clock for THIS verdict is which
+    capture it is: the freshest stamp known for the car, from any of those
+    sources, which can be hours newer than the values actually surfaced. So the
+    verdict was anchored on a real capture time — just not on the capture time
+    of the data it was judging.
 
     **The capture time was already in the snapshot.** ``field_captured_ts`` is a
     documented provenance map (see ``_PROVENANCE_MAPS``); it already supplies the
@@ -220,8 +233,9 @@ def _capture_age_s(data: dict[str, Any]) -> float | None:
        capture anything". A carried-forward field keeps its OLD stamp, which is
        the point: if every field is carried forward, every stamp is old, the
        newest is old, and the verdict fires.
-    2. ``last_seen_at`` — the delivery sighting, i.e. the previous behaviour, so
-       a channel that records no capture time is unchanged.
+    2. ``last_seen_at`` — the car's freshest capture across channels, i.e. the
+       previous behaviour, so a channel that records no per-field capture time
+       is unchanged.
 
     ``data_captured_at`` is deliberately NOT a step in this chain; the comment at
     the fall-through says why a dongle's "Datenstand" must not decide this.

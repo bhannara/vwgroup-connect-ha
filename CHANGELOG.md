@@ -46,6 +46,45 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Hinzugefügt / Added
+
+- **The closure and lock sensors now say when the car captured them (#1950).**
+  Asked for by @Adcad1970, who read the source first and corrected the premise
+  this was going to be built on — see the entry below. Per-value freshness
+  (`data_captured_at`, `freshness_source`) has been on numeric sensors since
+  v4.7.11, but doors, locks, windows, boot and bonnet carried no capture time at
+  all. On a portal-fed car those states are carried forward between snapshots,
+  so a door state captured six hours ago rendered identically to one captured a
+  minute ago — sitting right beside a battery reading that did show its age. A
+  dashboard can now say "doors closed as of 15:36".
+
+  The method moved onto the shared entity base instead of being copied into the
+  binary-sensor platform, so **no platform file was touched** to gain it and
+  every platform fed by the portal answers the question the same way. The
+  existing gate does the limiting by itself: a live-read channel is already
+  current at poll time, and a description without a data key has nothing to
+  stamp, so neither gets an attribute. One caveat worth stating plainly: the
+  stamp belongs to **that one field**. The newest capture in a snapshot is not
+  every value's capture time, and that confusion is exactly what this closes.
+
+### Geändert / Changed
+
+- **A code comment called `last_seen_at` a delivery clock, which it is not
+  (#1950, #1917).** @Adcad1970 found the contradiction in the source:
+  `_capture_age_s` said `last_seen_at` "says when the delivery was last SEEN",
+  while `compute_connection_state` and the EU Data Act mapper both document it
+  as a capture time. The mapper is right. Every writer of that field takes a
+  capture stamp and none takes a poll or wall clock — a test now measures that
+  across the package rather than asserting it in prose.
+
+  What made it the wrong anchor for the staleness verdict in #1917 is *which*
+  capture it is: the freshest stamp known for the car, from any channel,
+  advance-only, which can be hours newer than the values actually surfaced. So
+  the verdict had been anchored on a real capture time, just not on the capture
+  time of the data it was judging. The 5.1.3 fix stands unchanged; only its
+  explanation was wrong. That wording had already travelled beyond the comment,
+  which is the reason it is corrected here rather than quietly.
+
 ## [5.1.3] - 2026-10-28 — No verdict without the evidence / Kein Urteil ohne Beleg
 
 ### Behoben / Fixed
