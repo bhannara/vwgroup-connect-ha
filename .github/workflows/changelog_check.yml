@@ -1,14 +1,29 @@
 name: Changelog Pflicht
 
-# Runs on EVERY pull request, deliberately. This job is a required check on
-# main, and a required check that is filtered out by path never reports at
-# all — it sits as "expected" forever and the pull request can only be merged
-# by an administrator overriding the protection. That is what happened to
-# every docs-only and CI-only pull request in this repo. The rule itself has
-# not changed: the job decides for itself whether the rule applies, and says
-# so, instead of the trigger deciding whether anyone hears from it.
+# Runs on EVERY pull request AND on every push to main, deliberately.
+#
+# The pull-request half: this job is a required check on main, and a required
+# check that is filtered out by path never reports at all — it sits as
+# "expected" forever and the pull request can only be merged by an
+# administrator overriding the protection. That is what happened to every
+# docs-only and CI-only pull request in this repo. The rule itself has not
+# changed: the job decides for itself whether the rule applies, and says so,
+# instead of the trigger deciding whether anyone hears from it.
+#
+# The push half closes the same hole on the other side. Until 29.10.2026 the
+# trigger was `pull_request` only, measured: 30 of the last 30 runs of this
+# workflow were pull-request events, and no push to main had ever produced a
+# changelog verdict. A direct push could therefore drop an entry and nothing
+# would say so — the one thing this workflow exists to prevent. What the push
+# trigger does NOT do is remove the "Bypassed rule violations" notice on a
+# direct push: a brand-new commit cannot carry check results that only exist
+# once it has landed, so under required status checks EVERY direct push to
+# main reports all five contexts as "expected" and needs the bypass. That is
+# a property of pushing straight to a protected branch, not of this file.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
 
 jobs:
@@ -18,15 +33,42 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # need full history for git diff origin/main...HEAD
+          fetch-depth: 0  # need full history for the diff ranges below
 
       - name: Prüfen ob CHANGELOG.md geändert wurde
         id: scope
+        env:
+          # Passed through the environment rather than interpolated into the
+          # script body: a ref name is attacker-controlled on a fork and
+          # ${{ }} would splice it straight into the shell.
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
         run: |
-          FILES=$(git diff --name-only origin/main...HEAD)
-          # Published so the structure step can skip a pull request that does
-          # not touch this file at all; without it that step would judge main's
-          # existing state and refuse work that cannot fix it.
+          # A pull request is judged against its merge base; a push is judged
+          # against the commit the branch pointed at BEFORE the push, so a
+          # three-commit push is read as one change set instead of only its
+          # tip. Force pushes are disabled on main, so PUSH_BEFORE stays
+          # reachable — the guard below is for a branch creation, where it is
+          # the all-zero SHA.
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ -n "$PUSH_BEFORE" ] \
+               && [ "$PUSH_BEFORE" != "0000000000000000000000000000000000000000" ] \
+               && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+              FILES=$(git diff --name-only "$PUSH_BEFORE" "$PUSH_AFTER")
+            elif git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+              echo "Vorgänger-SHA des Push nicht nutzbar — vergleiche HEAD~1..HEAD."
+              FILES=$(git diff --name-only HEAD~1 HEAD)
+            else
+              echo "Kein Vorgänger-Commit — betrachte alle Dateien des Commits."
+              FILES=$(git show --name-only --format= HEAD)
+            fi
+          else
+            FILES=$(git diff --name-only origin/main...HEAD)
+          fi
+          # Published so the structure step can skip a change set that does
+          # not touch this file at all; without it that step would judge
+          # main's existing state and refuse work that cannot fix it.
           {
             echo "files<<__EOF__"
             echo "$FILES"
