@@ -52,26 +52,35 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   adding entity" in the log instead of an unavailable sensor (#1739).** Reported
   by @awood-ops on 5.1.3.
 
-  That sensor is an enum: its `device_class` declares exactly two permitted
-  states, `connected` and `disconnected`, and Home Assistant refuses to add an
-  entity whose state is not one of them. The value is normalised before it
-  reaches the sensor, and the normaliser is what failed — it was guarded by
-  `isinstance(value, str)`, so it only ever inspected values that were already
-  the right type. Anything else passed through untouched and straight into the
-  sensor. A barrier that only examines the type it already trusts is not a
-  barrier.
+  That sensor is an enum: it declares exactly two permitted states, and Home
+  Assistant does not degrade an out-of-vocabulary state to "unavailable" — it
+  refuses to add the entity at all. His traceback showed the state arriving as
+  `DISCONNECTED` against options spelled in lower case.
 
-  It now normalises by value rather than by type, so any value that is not one
-  of the two tokens becomes unavailable, whatever its type. The one connector
-  that can currently emit a non-string is the VW EU parser, which assigns the
-  backend's raw `plugConnectionState` when it is not text; normalising
-  downstream covers that path and any future one. A bare `true` is deliberately
-  not mapped to `connected`: either polarity could be meant, and guessing would
-  be a fabricated reading. The separate Charging Cable boolean carries that
-  signal.
+  **Three mistakes lined up, and the first diagnosis caught the least important
+  one.** The normaliser was guarded by `isinstance(value, str)`, so it inspected
+  only values that were already the type it trusted. That was real but it was not
+  his bug: an upper-case string passes that guard and comes out folded correctly.
 
-  The reporter's own traceback is still outstanding, so this is the defect the
-  code proves, not yet a confirmed explanation of his car.
+  The one that broke his car is that on his path the normaliser never ran at all.
+  It lived only in the enrichment step, which runs on a poll that parsed vehicle
+  data — and his failure was at setup, before any poll. On startup the integration
+  restores the last-known-good snapshot so entities show recorded values instead
+  of sitting unknown, and that restore hands the stored data straight to the
+  platforms without enriching it. Since the vehicle cache has never had its
+  version bumped, a snapshot written before a normaliser existed is still loaded
+  verbatim today. Third, the normaliser covered one field while there are five
+  enum sensors, every one of them exposed the same way.
+
+  Normalisation now reads each enum sensor's permitted states from the sensor
+  descriptors themselves and runs on both paths, so a sixth enum sensor is
+  covered without anyone remembering a second list. A value that is not in its
+  options becomes unavailable rather than a guess. Five mutations of the new code
+  were each caught by a dedicated test, including one that moves the call after
+  the snapshot is published — which would read as a fix and do nothing.
+
+  @awood-ops read his own traceback and named the case mismatch before I did,
+  after I had already published the wrong explanation.
 
 - **A log line promised that a car refused by the legacy gateway would be
   retried after twelve hours, which for many setups never happens (#584).**

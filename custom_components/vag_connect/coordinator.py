@@ -197,6 +197,81 @@ def _gap_fill_from_export(
     return filled
 
 
+_ENUM_OPTIONS: dict[str, frozenset[str]] | None = None
+
+
+def _enum_options_by_data_key() -> dict[str, frozenset[str]]:
+    """Each enum sensor's data key mapped to the states it will accept.
+
+    Read from the sensor descriptors themselves rather than restated here, so an
+    enum sensor added later is covered without anyone having to remember a second
+    list — the completeness of this map is the whole point of it. ``sensor``
+    imports this module, so the import is deferred and the result cached.
+    """
+    global _ENUM_OPTIONS  # noqa: PLW0603
+    if _ENUM_OPTIONS is None:
+        from .sensor import SENSOR_DESCRIPTIONS  # noqa: PLC0415
+
+        # Bound to locals before the test, deliberately: a truthiness check on
+        # ``getattr(desc, "options", None)`` does not narrow ``desc.options``
+        # for the type checker, because it is a different expression. Strict
+        # mypy rejected the comprehension form for exactly that reason.
+        mapping: dict[str, frozenset[str]] = {}
+        for desc in SENSOR_DESCRIPTIONS:
+            options = getattr(desc, "options", None)
+            data_key = getattr(desc, "data_key", None)
+            if options and data_key:
+                mapping[data_key] = frozenset(options)
+        _ENUM_OPTIONS = mapping
+    return _ENUM_OPTIONS
+
+
+def normalize_enum_states(data: dict[str, Any]) -> None:
+    """Fold every enum-sensor value in ``data`` onto its declared options.
+
+    #1739 (@awood-ops) — Home Assistant does not degrade an out-of-vocabulary
+    enum state to "unavailable"; it refuses to add the entity at all, with
+    ``Error adding entity … provides state value 'X', which is not in the list of
+    options``. So a value that misses by case costs the whole sensor.
+
+    This has to run on **every** path that reaches the entities, not only on a
+    poll. The cache restore during setup hands a stored snapshot straight to the
+    platforms so they show recorded values instead of sitting unknown, and it
+    deliberately does not enrich — enrichment only runs on a poll that parsed
+    vehicle data. Since ``VEHICLE_CACHE_VERSION`` has never been bumped, a
+    snapshot written before a given normaliser existed is still loaded verbatim
+    today. That combination is how an upper-case ``DISCONNECTED`` reached an
+    options list of two lower-case tokens on 5.1.3, at setup, before any poll.
+
+    Folding to ``None`` rather than guessing is deliberate: an unrecognised token
+    means we do not know the state, and inventing one would be worse than an
+    unavailable sensor. All five options lists are lower-case, which is checked
+    by a test so this ``lower()`` cannot quietly start destroying a value.
+
+    **Why the call site in the cache restore is a bare one-liner.** Two existing
+    guards box that block in from both sides. One requires ``_redecide_stale`` to
+    appear within six lines after the line that flags a snapshot as restored; the
+    other within four lines before the line that publishes it, so that a reader
+    of either end sees the re-decide. An explanatory comment at that call site
+    pushes the re-decide out of one window or the other and fails a test, which
+    is why the explanation lives here instead. Note also that those guards scan
+    for their anchors across the whole module and skip only ``#`` comments — so
+    prose must not quote either anchor verbatim, or the documentation becomes a
+    phantom third site with no re-decide after it. That cost a run to find.
+
+    The call also sits *before* the re-decide rather than after: the two touch
+    disjoint fields (this one the five enum keys, that one only ``data_stale``),
+    so the order is immaterial, and this way the re-decide stays adjacent to the
+    line it guards. Do not "tidy" either of those back.
+    """
+    for key, allowed in _enum_options_by_data_key().items():
+        value = data.get(key)
+        if value is None:
+            continue
+        folded = str(value).strip().lower()
+        data[key] = folded if folded in allowed else None
+
+
 def _capture_age_s(data: dict[str, Any]) -> float | None:
     """Seconds since the car itself captured the data, or None.
 
@@ -1909,6 +1984,7 @@ class VagConnectCoordinator(DataUpdateCoordinator):
                         restored = dict(vdata)
                         restored["_restored"] = True
                         restored["_poll_failed"] = False
+                        normalize_enum_states(restored)  # #1739 — see docstring
                         self._redecide_stale(restored)
                         self.vehicles[vin] = restored
                         _restored_vins.append(vin)
@@ -7521,23 +7597,14 @@ class VagConnectCoordinator(DataUpdateCoordinator):
         # 'invalid'/'unsupported' sentinel. Lowercase it and keep only the two
         # real values; anything else → None (unavailable) rather than an
         # untranslatable raw string. plug_connected (the boolean) is unaffected.
-        # #1739 (@awood-ops) — the guard below used to be ``isinstance(_plug_state,
-        # str)``, which let a NON-string past untouched. The sensor's device_class
-        # is ENUM with exactly the two options above, and Home Assistant refuses to
-        # add an entity whose state is not among them, so a raw non-string surfaced
-        # as "Error adding entity sensor.<car>_charging_port" at setup rather than
-        # as an unavailable sensor. A barrier that only inspects the type it already
-        # trusts is not a barrier. The single producer that can emit one today is
-        # the else branch in vw_eu.py (``d.plug_state = plug_state`` on whatever the
-        # backend put at charging.plugStatus.value.plugConnectionState); normalizing
-        # by value instead of by type covers that path and every future one.
-        # Coercing rather than mapping is deliberate: a bare True could mean either
-        # polarity, and picking one would be the fabrication Hard Rule #8 forbids —
-        # so it lands on None, and plug_connected (the boolean) carries that signal.
-        _plug_state = data.get("plug_state")
-        if _plug_state is not None:
-            _psl = str(_plug_state).strip().lower()
-            data["plug_state"] = _psl if _psl in ("connected", "disconnected") else None
+        # #1739 (@awood-ops) — this was a plug_state-only block guarded by
+        # ``isinstance(_plug_state, str)``, i.e. a barrier that only inspected the
+        # type it already trusted, on only one of the two paths that reach the
+        # entities, for only one of the five enum sensors. All three of those were
+        # wrong in the same way. ``normalize_enum_states`` folds every enum
+        # sensor's value onto its own declared options and is called from the cache
+        # restore as well; see its docstring for why the restore path matters.
+        normalize_enum_states(data)
 
         # Fuel-level % from a user-configured tank capacity + the litres reading.
         # acpp plug&play reports litres, not a %, and the tank size isn't in the
