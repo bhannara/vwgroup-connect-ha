@@ -64,7 +64,35 @@ class VagClimate(VagConnectEntity, ClimateEntity):
 
     _attr_translation_key = "climate"
     _attr_icon = "mdi:thermometer"
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    # #1965 — HA 2026.11 gave climate the native-unit treatment sensors already
+    # had. ``temperature_unit``, ``current_temperature`` and
+    # ``target_temperature`` (and their ``_attr_`` twins) became
+    # ``Final = DeprecatedEntityProperty`` on ``ClimateEntity``, replaced by
+    # ``native_temperature_unit`` (set as ``_attr_native_temperature_unit``),
+    # ``native_current_temperature`` and ``native_target_temperature``, with
+    # removal announced for **2027.11**.
+    #
+    # We keep the old names on purpose, and the three ``type: ignore[misc]``
+    # below are the whole cost of that decision:
+    #
+    # * the native names **do not exist** before 2026.11 (measured: they are
+    #   absent from ``ClimateEntity`` on 2026.10.1), and ``hacs.json`` declares
+    #   a floor of 2026.6.0 — switching now would break the climate entity on
+    #   every installation that has not taken the 2026.11 update yet;
+    # * for a CUSTOM integration the deprecation only logs a warning. The
+    #   ``RuntimeError`` path in ``migrate_deprecated_entity_members`` is
+    #   reachable only for modules under ``homeassistant.components.``, so this
+    #   keeps working on 2026.11 rather than failing;
+    # * defining both names is not a middle road: our own override would still
+    #   shadow the base descriptor, so the native member would never be read.
+    #   Dead code that looks like a migration is worse than an honest bridge.
+    #
+    # The migration is a two-line change per member — see
+    # ``tests/test_1965_climate_native_temperature_bridge.py``, which fails the
+    # moment the floor in ``hacs.json`` reaches 2026.11 and these are still
+    # here. CI does not pass ``--warn-unused-ignores``, so the ignores cost
+    # nothing on the versions that do not need them.
+    _attr_temperature_unit = UnitOfTemperature.CELSIUS  # type: ignore[misc]
     _attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT_COOL]
     _attr_supported_features = ClimateEntityFeature.TARGET_TEMPERATURE
     _attr_min_temp = MIN_TEMP
@@ -107,11 +135,11 @@ class VagClimate(VagConnectEntity, ClimateEntity):
             return HVACMode.HEAT_COOL
         return HVACMode.OFF
 
-    @property
+    @property  # type: ignore[misc]  # #1965 — see the note on the class body
     def current_temperature(self) -> float | None:
         return self._vehicle.get("outside_temp")
 
-    @property
+    @property  # type: ignore[misc]  # #1965 — see the note on the class body
     def target_temperature(self) -> float | None:
         # Companion: the temperature held in HA for the next Start (the poll
         # reads what the app's dial shows, which Start overwrites).

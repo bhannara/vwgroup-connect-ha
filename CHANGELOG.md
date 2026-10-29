@@ -99,6 +99,35 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ### Geändert / Changed
 
+- **Ready for Home Assistant 2026.11 before it reaches you (#1965).** The
+  scheduled beta watch — not a user — found our own checks failing against
+  2026.11.0b0, in three different ways that are worth separating.
+
+  **The real change:** `ClimateEntity` got the native-unit treatment sensors
+  have had for years. `temperature_unit`, `current_temperature` and
+  `target_temperature` became deprecated aliases for `native_*` names, with
+  removal announced for 2027.11. We are **deliberately not migrating yet**: the
+  native names do not exist before 2026.11 — measured absent on 2026.10.1 — and
+  this integration still supports 2026.6, so switching would break the climate
+  entity on every installation that has not taken the update. For a custom
+  integration the deprecation only logs a warning, so the entity keeps working
+  on 2026.11 either way. A test now fails the moment the supported floor
+  reaches 2026.11 and the old names are still there, so the migration happens
+  on a trigger rather than on someone remembering.
+
+  **A dependency that is not ours:** `httpx` is not part of Home Assistant's
+  dependency set, so on an environment without it the HTTP/2 channel's three
+  string returns are seen as untyped. They are now annotated, which is a
+  statement of fact rather than a silencer.
+
+  **And one false alarm, worth naming as such:** Home Assistant flipped the
+  order inside its ALPN constant to prefer HTTP/2 — if anything an improvement
+  for the volkswagen.de channel. Nothing of ours reads that order; a test of
+  ours had pinned it, and so turned a cosmetic upstream change into a red
+  build. It now compares the contents.
+
+  No behaviour changes for anyone on any version.
+
 - **A code comment called `last_seen_at` a delivery clock, which it is not
   (#1950, #1917).** @Adcad1970 found the contradiction in the source:
   `_capture_age_s` said `last_seen_at` "says when the delivery was last SEEN",
