@@ -312,3 +312,74 @@ def test_the_raw_vin_never_reaches_a_current_card() -> None:
         assert any("mask_vin(vin)" in line for line in created), (
             f"{fn.__name__} no longer masks the VIN in the id it creates"
         )
+
+
+# ── the dismissed card, measured on a real registry ───────────────────────
+#
+# #923 (@skornehl, 2026-10-30) — he measured the sweep on 5.2.0 and reported
+# that it removed the legacy card of his sold vehicle, adding: "I had dismissed
+# it in the UI, so dismissed cards are covered too."
+#
+# That works, and it works for a reason outside this repository: dismissing an
+# issue in Home Assistant does not remove it. ``IssueRegistry.async_ignore``
+# writes the entry back with ``dismissed_version`` set and fires an *update*,
+# while the delete path pops the key and fires a *remove*. So the scan still
+# sees a dismissed card and deletes it.
+#
+# The stub registry above cannot pin this: the sweep never looks at an entry's
+# VALUE, only at its key, so a stub test would pass whatever the dismissed
+# state was and would prove nothing. The assumption that needs guarding is Home
+# Assistant's, so these two tests use a REAL ``IssueRegistry`` and will fail if
+# an upgrade ever starts removing dismissed issues instead of marking them.
+
+
+def _real_registry_with_legacy_card(issue_id: str):
+    """A real ``IssueRegistry`` carrying one legacy raw-VIN card."""
+    from homeassistant.helpers import issue_registry as ha_ir
+
+    registry = ha_ir.IssueRegistry(MagicMock())
+    # Persistence is not what these two tests are about, and a mocked hass has
+    # no real clock for the debounced store to compare deadlines against.
+    registry.async_schedule_save = MagicMock()  # type: ignore[method-assign]
+    registry.async_get_or_create(
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        is_persistent=False,
+        severity=ha_ir.IssueSeverity.WARNING,
+        translation_key="stale_data",
+    )
+    return registry, ha_ir
+
+
+def test_dismissing_a_card_keeps_it_in_the_registry() -> None:
+    """The Home-Assistant-side assumption the sweep rests on, pinned against
+    the installed package rather than assumed."""
+    issue_id = f"entry1_stale_data_{_VIN}"
+    registry, _ = _real_registry_with_legacy_card(issue_id)
+    key = (DOMAIN, issue_id)
+    assert key in registry.issues
+
+    entry = registry.async_ignore(DOMAIN, issue_id, True)
+    assert key in registry.issues, (
+        "Home Assistant now removes a dismissed issue instead of marking it; "
+        "the registry scan in sweep_legacy_raw_vin_issues can no longer reach "
+        "a card the user dismissed, and #923 is open again"
+    )
+    assert entry.dismissed_version is not None
+
+    # Control: the delete path really does remove the key, so the assertion
+    # above is testing a difference and not a tautology.
+    registry.async_delete(DOMAIN, issue_id)
+    assert key not in registry.issues
+
+
+def test_the_sweep_removes_a_dismissed_legacy_card() -> None:
+    """End to end on a real registry: his case, including the dismissal."""
+    issue_id = f"entry1_stale_data_{_VIN}"
+    registry, _ = _real_registry_with_legacy_card(issue_id)
+    registry.async_ignore(DOMAIN, issue_id, True)
+
+    # An empty VIN list, because the car is sold and in no list this code can
+    # build — the half of #923 that made the registry scan necessary.
+    assert issue_id in _swept(registry, [])

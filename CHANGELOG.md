@@ -46,6 +46,62 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+### Behoben / Fixed
+
+- **Three credential keys reached the diagnostics download unredacted, the
+  volkswagen.de session cookies among them (#923).** The file this integration
+  asks you to attach to a public issue could carry `website_cookies` — the vw.de
+  cookie jar that keeps you signed in — plus the per-VIN MBB command tokens and,
+  if you use it, the Tibber account's tokens. All three are stored on the config
+  entry, which the download emits as `config`, and a cookie or a token is an
+  opaque string, so none of the pattern-based redactions matched one.
+
+  **If you have attached a diagnostics file from a volkswagen.de-login entry to
+  a public issue, sign out of volkswagen.de and back in.** That invalidates the
+  jar in the file. There is no sign that anyone has used one — the problem is
+  that the file was readable by anyone.
+
+  It was missed the way long allow-lists are missed. The redaction list already
+  carried both *sibling* jars — the supplementary vw.de slot and the VW-EU
+  two-way one — and its own comment states that "the vw.de cookie list carries
+  the auth0 / auth0-mf SSO session tokens". Checked against itself the list
+  looked complete. The same had happened to the token maps: Companion, VW-EU
+  two-way and Škoda were registered, MBB and Tibber were not. So the new test
+  does not read the list. It derives what ought to be redacted from the key
+  names in `const.py`, which is the only thing that exists at the moment someone
+  adds a key, and fails when one is unhandled. Two keys are exempt with a
+  written reason: a boolean opt-in that only looks like a password, and the
+  Škoda key map, which has its own masker so the enrolment count survives.
+
+- **"No data-request yet" was printed at people whose data request was active
+  (#1850).** Reported by @indigomejor, who paired the line with its timestamps:
+  the portal said it once at 12:03, four `dataset listing unavailable (HTTP 404)`
+  lines followed, and his request had never gone away.
+
+  The line now says what the portal actually answered — `(the portal answered
+  HTTP 404)` — and adds that this answer does not always mean the request is
+  missing, so if you already have one you should leave it alone. The advice for
+  someone who genuinely has no request is unchanged, deliberately: a 404 *is*
+  the portal saying "no such request", which #1932 decided and pinned with a
+  test, and that is the one case where there is something to do. Replacing the
+  advice on the strength of one report would have reversed that decision
+  silently.
+
+  Also fixed behind it: the status being reported is now cleared *before* the
+  metadata read rather than after it. It is only written when a read fails
+  softly, so a successful read left the previous poll's status in place — naming
+  that would have attributed an old 404 to a healthy poll.
+
+- **A dataset whose JSON root is not an object was read as "no data this poll",
+  silently.** Nothing in a log distinguished that from an empty delivery. The
+  shape has never been seen — every export file in this repository has an object
+  at its root, and the "flat list of objects" in #1950 is the `Data` array
+  inside one — so this deliberately does not start handling it: inventing
+  handling for a payload nobody has delivered is how untested branches are born.
+  It now warns, naming the root's type and how many top-level items it had, and
+  nothing else: not the file name, which can carry a VIN, and not a single
+  value.
+
 ## [5.2.0] - 2026-10-30 — As of when? / Seit wann gilt das?
 
 ### Behoben / Fixed

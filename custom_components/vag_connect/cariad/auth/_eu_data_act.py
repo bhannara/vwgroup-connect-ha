@@ -7028,6 +7028,13 @@ class EUDataActConnector:
         # VehicleData so the vehicle still appears and the data fills in
         # once the portal request goes active, instead of erroring every
         # poll (#393, #424).
+        # #1850 (@indigomejor) — reset before the read, not after it. The flag
+        # is only written in the soft+transient branch of _get_json, so a 200
+        # leaves whatever an earlier poll put there; the message below now
+        # reports this status, and reporting a stale one would be worse than
+        # reporting none. Mirrors the reset before the listing read further
+        # down. Nothing reads it between here and there.
+        self._last_soft_status = None
         meta = await self._get_json(
             f"{_PORTAL_BASE}{meta_path.format(vin=vin)}", soft=True,
         )
@@ -7079,12 +7086,41 @@ class EUDataActConnector:
                 )
                 return d
             self._note_no_data("no_request")
+            # #1850 (@indigomejor) — this line used to be the same sentence
+            # whatever had happened, and it told a user whose data request was
+            # demonstrably active to go and create one. The split in #1932/#1933
+            # covers a portal that could not be REACHED; a portal that ANSWERS
+            # with an error status lands here too. He had a 404 on this read at
+            # 12:03, four `dataset listing unavailable (HTTP 404)` lines after
+            # it, and a live request the whole time.
+            #
+            # The first attempt at this split was wrong, and #1932's own tests
+            # caught it: they decide deliberately that a 404 IS the portal
+            # saying "no such request", and that the advice must survive for it,
+            # "the one case where the user does have something to do". Replacing
+            # the advice for a 404 would have overridden that decision on the
+            # strength of one report.
+            #
+            # So the defect is not that a 404 lands here. It is that the line
+            # stated the advice as a certainty while his request was live. One
+            # message, then: the advice stays verbatim, the status is named when
+            # the read recorded one, and the caveat says what his case proves —
+            # that this answer does not always mean the request is missing.
+            # The reason string stays ``no_request`` either way: it feeds the
+            # portal-health sensor's enum and its translations, and a new value
+            # would have to be added in several places for a wording change.
             _LOGGER.info(
-                "EU Data Act portal: no data-request yet for %s — enable the "
-                "continuous data request for this car on the VW data portal "
-                "(it can take a while to propagate). Vehicle will show with no "
-                "data until then.",
+                "EU Data Act portal: no active data-request found for %s%s. If "
+                "you have not set one up, enable the continuous data request "
+                "for this car on the VW data portal (it can take a while to "
+                "propagate). If you already have one, leave it alone — the "
+                "portal sometimes answers this way while a request is live, "
+                "and it clears on its own. Vehicle will show with no data "
+                "until then.",
                 vin[-6:],
+                f" (the portal answered HTTP {self._last_soft_status})"
+                if self._last_soft_status is not None
+                else "",
             )
             return d
         # #465 observability — record WHEN this data request was created (its
@@ -7294,7 +7330,28 @@ def _unzip_json(raw: bytes, name: str) -> dict[str, Any]:
                 return {}
             with zf.open(members[0]) as fh:
                 parsed = json.loads(fh.read().decode("utf-8"))
-            return parsed if isinstance(parsed, dict) else {}
+            if not isinstance(parsed, dict):
+                # A non-dict root was read as "no data this poll", which in a
+                # log is indistinguishable from a genuinely empty delivery —
+                # the one failure mode this project treats as worse than an
+                # error. No real export has ever had one: every tracked fixture
+                # is a dict root, and @Adcad1970's "flat list of 67 objects"
+                # (#1950) is the Data array INSIDE one. So this deliberately
+                # does not start handling the shape — inventing handling for a
+                # payload nobody has seen is how untested branches are born.
+                # It makes the case visible if VW ever ships it. Shape only:
+                # no file name, no values.
+                _LOGGER.warning(
+                    "EU Data Act portal: the dataset JSON has a %s at its root "
+                    "instead of an object (%d top-level item(s)) — this poll is "
+                    "treated as empty. Nothing is wrong with your account; "
+                    "please report this, it is a delivery shape we have not "
+                    "seen.",
+                    type(parsed).__name__,
+                    len(parsed) if isinstance(parsed, (list, str)) else 0,
+                )
+                return {}
+            return parsed
     except (zipfile.BadZipFile, ValueError, KeyError, OSError):
         return {}
 

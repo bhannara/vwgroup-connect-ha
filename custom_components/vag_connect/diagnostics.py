@@ -44,13 +44,16 @@ from .const import (
     CONF_DATA_ACT_IDENTIFIERS,
     CONF_DATA_ACT_KICKOFF_TS,
     CONF_ENABLE_REVERSE_GEOCODING,
+    CONF_MBB_COMMAND_TOKENS,
     CONF_PASSWORD,
     CONF_SPIN,
     CONF_SPIN_BY_VIN,
     CONF_SUPPLEMENTARY_AUTHPROXY_COOKIES,
     CONF_SUPPLEMENTARY_EU_PORTAL_PASSWORD,
     CONF_SUPPLEMENTARY_EU_PORTAL_USERNAME,
+    CONF_SUPPLEMENTARY_TIBBER_TOKENS,
     CONF_USERNAME,
+    CONF_WEBSITE_COOKIES,
     CONF_VWEU_TWOWAY_COOKIES,
     CONF_VWEU_TWOWAY_EMAIL,
     CONF_VWEU_TWOWAY_PASSWORD,
@@ -170,6 +173,27 @@ _REDACT_KEYS = frozenset({
     # ``{VIN: {key, id, validUntil}}`` dict and is routed through
     # _redact_identifier_map below (keeps the enrolment count, masks each record).
     "skoda_official_api_key",
+    # #923 — three credential keys that were never registered here, found by
+    # deriving the list from const.py instead of reading this one. The b11 note
+    # above says in so many words that "the vw.de cookie list carries the
+    # auth0 / auth0-mf SSO session tokens" — and then registers the
+    # SUPPLEMENTARY slot's jar while leaving the PRIMARY one out. Both sibling
+    # jars were covered, so the gap read as closed. Same shape for the tokens:
+    # the Companion, VW-EU two-way and Škoda token maps were registered and
+    # these two were not.
+    #
+    #   CONF_WEBSITE_COOKIES          — the live vw.de session jar, written back
+    #                                   to the entry on every refresh.
+    #   CONF_MBB_COMMAND_TOKENS       — per-VIN MBB command tokens.
+    #   CONF_SUPPLEMENTARY_TIBBER_TOKENS — the Tibber account's tokens.
+    #
+    # All three land in ``entry.data``, which this module dumps as ``config``,
+    # and a cookie or token value is opaque, so no generic branch below masks
+    # it. ``test_diagnostics_redaction_completeness`` now derives the expected
+    # set from const.py so the next one cannot be forgotten in the same way.
+    CONF_WEBSITE_COOKIES,
+    CONF_MBB_COMMAND_TOKENS,
+    CONF_SUPPLEMENTARY_TIBBER_TOKENS,
 })
 
 
