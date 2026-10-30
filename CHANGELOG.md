@@ -46,6 +46,8 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-10-30 — As of when? / Seit wann gilt das?
+
 ### Behoben / Fixed
 
 - **The Charging Port sensor could fail to be created at all, with "Error
@@ -151,6 +153,36 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   stamp belongs to **that one field**. The newest capture in a snapshot is not
   every value's capture time, and that confusion is exactly what this closes.
 
+- **The door, boot and bonnet locks now say when the car captured them (#1950).**
+  Asked for by @Adcad1970, who then sent the shape of two real deliveries and read
+  it correctly himself: every lock entry in his export carries its own
+  `timestampUtc`, and the parser never dropped them. They were being lost one step
+  later. Recording a capture time is opt-in per call site in the mapper, and no
+  lock or closure site had ever asked for it — so those sensors reported
+  `freshness_source: "dataset"` even though their own entry in the file was
+  stamped. They now carry `data_captured_at` and `"point"`.
+
+  **The door-lock sensor is an aggregate, and its stamp is the OLDEST reporting
+  door's.** "All doors locked" is only as trustworthy as its stalest member: if one
+  door's reading was captured two days ago, the verdict is two days old however
+  fresh the other three are, and taking the freshest member would advertise a
+  confidence the verdict does not have. If any reporting door carries no stamp at
+  all, the verdict stays unstamped rather than borrowing a sibling's time — the
+  sensor then reads "dataset" exactly as before, instead of a wrong "point". Boot
+  and bonnet come from single fields and need no such choice.
+
+  Nothing here depends on position in the file. His two deliveries, generated 44
+  minutes apart, listed the same six locks in different places, so a result that
+  moved with the order would have been wrong on at least one of them. The stamp is
+  also recorded inside the branch that assigns the value, so an unsupported or
+  invalid reading (0 or 1) records nothing and a verdict that came from another
+  channel keeps its own provenance.
+
+  One place it cannot appear: the `lock.door_lock` entity. That one has no data key
+  — it reads the merged value directly — so the freshness attributes do not apply
+  to it. The capture time is on the door-lock, boot-lock and bonnet-lock binary
+  sensors.
+
 ### Geändert / Changed
 
 - **Ready for Home Assistant 2026.11 before it reaches you (#1965).** The
@@ -226,10 +258,17 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   A test now pins what the comments assert and refuses a comment that prices a
   portal value at 15 minutes again. It also pins something that was found by
   measuring rather than by reading: a capture marker standing in the same list
-  as a value **is** that value's capture time, which is how most exports are
-  shaped and is correct — only the payload-wide floor is withheld. Those two
-  routes look identical in a single-marker file, which is how the wrong
-  wording survived. One older test of the "newest wins" rule fed its input in
+  as a value is **taken as** that value's capture time, while the payload-wide
+  floor is withheld. Two things are worth stating about that, because neither
+  was: it is an inference from POSITION, and VW reorders the list between
+  deliveries (#465, and @Adcad1970 measured the lock entries moving between two
+  files on 30 Oct), so it is not the same thing as an entry carrying its own
+  timestamp. And this repo cannot say which shape is more common — the only
+  real export files in it are four from one CUPRA Born (#1195), all with
+  markers, while marker-free exports whose every entry carries its own stamp
+  are attested by #1688 and #1950 and by no fixture at all. Those two routes
+  look identical in a single-marker file, which is how the wrong wording
+  survived. One older test of the "newest wins" rule fed its input in
   ascending order only, so a "last one in the array wins" implementation would
   have passed it; it now feeds both orders.
 
@@ -4403,6 +4442,16 @@ _Consolidates the 4.4.0b1–b5 betas into one stable release._
 ### Fixed
 - **Audi cars finally show their real model — the bare "Audi (2021)" S6 becomes "Audi S6 Avant TDI quattro tiptronic".** The localized `media.shortName`/`longName` are only returned when the model query carries a locale; our request omitted `Accept-Language` + `X-User-Country`, so the backend answered with just the model year and a null `media`. Proven with a same-account A/B test (no headers → blank; headers → full name). The request now always sends a valid locale (from the account's country), the list is read from the myAudi app-API first (web-proxy as fallback), and the render-image entities got clean, consistent, localized names too.
 - **Portal-primary cars no longer show a stale door / window / lock state.** If the EU Data Act portal is your main channel and a live channel (the CARIAD BFF or vw.de) is also connected, the current door / window / lock / trunk reading from the live channel now wins over the portal's up-to-15-minute-old snapshot — the same cross-channel rule we already apply to charging and SoC (a door-open warning automation was exactly the kind of thing that could act on the stale value). Odometer, GPS position and service intervals are deliberately left untouched.
+
+  > **Later correction (2026-10-30, #1950):** "up-to-15-minute-old" above is
+  > wrong, and is left standing as it shipped. 15 minutes is the portal's publish
+  > cadence, not a bound on how old a portal value is: a car that has had no wake
+  > event keeps re-delivering its last export, and #1688 had the car's own capture
+  > field frozen five days behind the data points beside it. The rule this entry
+  > describes does not rest on that number — it hands the field to the
+  > highest-priority live channel whenever the batch feed owns it, whatever the
+  > batch value's age. If anything the wrong number understated why the rule is
+  > needed.
 - **The EU-Data-Act export buttons now appear on a command car that also reads the portal (#923).** If your car sends remote commands *and* pulls the EU Data Act feed, the "Request historical export" / data-request buttons were missing — the gate only recognised a read-only portal or the explicit option. It now also spots a live portal connection (or a saved active data request), on merged setups too, so the buttons show up on their own and a merged setup can import the result. Thanks @naked-head and @dazzzl — the toggle A/B test pinned it exactly.
 - **SEAT/CUPRA: the "outdated OLA headers" repair no longer gets stuck on (#1301).** For cars that read via the portal (the SEAT/CUPRA online API is switched off at VW's end), that repair could latch on and re-announce itself on every poll — it was built to clear only on a successful call to an API that can no longer answer. It now auto-resolves whenever the portal is serving your data and stays gone. Thanks @anju1337 for the precise report.
 - **VW trunk-open now reads the portal's dotted `trunk.open` field (#1293).** The EU Data Act feed can report the trunk state as a dotted boolean (`trunk.open: "true"`), the same way it already does for `trunk.locked`; we only read the numeric enum and UUID form, so on that dialect the trunk-open sensor stayed empty. Thanks @MirkoKas.

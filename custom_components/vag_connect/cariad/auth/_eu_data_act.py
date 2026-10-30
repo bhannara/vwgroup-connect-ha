@@ -3634,12 +3634,16 @@ def map_dataset_to_vehicle_data(
     # doors_locked from the PER-DOOR lock states. This is the authoritative
     # signal on the portal's payload (the bare `locked` field is absent/stale —
     # it was wrongly reporting an unlocked car), so it OVERRIDES the block above.
-    _locks = [
-        _to_int(first("locked_state_front_left_door")),
-        _to_int(first("locked_state_front_right_door")),
-        _to_int(first("locked_state__rear_left_door")),   # double underscore in spec
-        _to_int(first("locked_state_rear_right_door")),
-    ]
+    # Door order is load-bearing below: the aggregate's capture stamp breaks a
+    # tie by this order, so front-left wins a tie rather than an alphabetical
+    # accident.
+    _lock_names = (
+        "locked_state_front_left_door",
+        "locked_state_front_right_door",
+        "locked_state__rear_left_door",   # double underscore in spec
+        "locked_state_rear_right_door",
+    )
+    _locks = [_to_int(first(n)) for n in _lock_names]
     _tail_lock = _to_int(first("locked_state_tailgate"))
     # #1950 (@Adcad1970, Audi A6 e-tron) — the tailgate is NOT a door. It used to
     # be folded into the aggregation below, which broke both ways on a delivery
@@ -3654,8 +3658,30 @@ def map_dataset_to_vehicle_data(
     _lock_vals = [v for v in _locks if v in (2, 3)]
     if _lock_vals:
         d.doors_locked = all(v == 2 for v in _lock_vals)  # any unlocked → False
+        # #1950 (@Adcad1970) — stamp the verdict with the OLDEST reporting
+        # door's capture time. An aggregate is only as trustworthy as its
+        # stalest member: if one leaf was captured two days ago, "all doors
+        # locked" is two days old however fresh the other three are, and the
+        # freshest member would advertise a confidence the verdict does not
+        # have. Only when EVERY reporting door carries a stamp — a leaf that
+        # reported without one would make the oldest-of-the-rest too new, and
+        # borrowing a sibling's time is the mistake this whole area is being
+        # corrected for. Recorded here, inside the assigning branch, so the
+        # stamp can never attach to a doors_locked that came from the bare
+        # ``locked`` read above or from another channel.
+        _reporting = [n for n, v in zip(_lock_names, _locks) if v in (2, 3)]
+        _stamps = [
+            (ts, n)
+            for n in _reporting
+            if (ts := (field_ts or {}).get(n)) is not None
+        ]
+        if len(_stamps) == len(_reporting):
+            _record("doors_locked", min(_stamps, key=lambda s: s[0])[1], tuple(_reporting))
     if _tail_lock in (2, 3) and d.trunk_locked is None:
         d.trunk_locked = _tail_lock == 2
+        # Single field, so no policy question: the tailgate's own stamp IS the
+        # verdict's stamp.
+        _record("trunk_locked", "locked_state_tailgate", ("locked_state_tailgate",))
     # v2.17.5 — the boolean ``trunk.locked`` dialect (dotted spelling so it never
     # collides with the door's bare ``locked``). "true" = trunk locked.
     # Consumed whatever the companion says (see _STATE_COMPANION_CONTAINERS);
@@ -4794,6 +4820,13 @@ def map_dataset_to_vehicle_data(
     _bonnet_lock = _to_int(first("locked_state_front_engine_bonnet"))
     if _bonnet_lock in (2, 3):
         d.bonnet_locked = _bonnet_lock == 2
+        # #1950 — single field, same as the tailgate: its own stamp is the
+        # verdict's stamp. Inside the branch so an invalid 0/1 records nothing.
+        _record(
+            "bonnet_locked",
+            "locked_state_front_engine_bonnet",
+            ("locked_state_front_engine_bonnet",),
+        )
     # v4.7.11 (grounded on a competing EU-Data-Act reader's issue #53, 2026-09-12): a live
     # SEAT/CUPRA delivery showed safe_state_front_engine_bonnet=3 while the bonnet
     # was CLOSED (open_state_front_engine_bonnet=3=closed in that same dataset).

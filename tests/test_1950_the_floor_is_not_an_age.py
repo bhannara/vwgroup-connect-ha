@@ -18,8 +18,12 @@ stand-in for the export's freshest reading.
 The second thing pinned here was found by measuring rather than by reading. A
 recorded capture time does NOT have to come from the leaf's own sibling key: a
 ``car_captured_*`` marker standing earlier in the SAME list becomes the capture
-time of the items that follow it, which is the shape most exports use and is
-correct — VW groups a block of points under one stamp. What never happens is the
+time of the items that follow it, on the assumption that VW groups a block of
+points under one stamp. That assumption is an inference from POSITION, and the
+repo's own #465 work plus @Adcad1970's two files of 30 Oct show VW reordering
+the list between deliveries — so it is weaker than an entry's own timestamp, and
+how common either shape is cannot be answered from this repo (four real export
+files, all from one car, all with markers). What never happens is the
 payload-wide floor being handed to a field in another branch. Those two routes
 look alike in a single-marker file and are easy to conflate in a comment, which
 is how the original wording got away with being wrong for so long.
