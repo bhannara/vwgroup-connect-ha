@@ -86,10 +86,14 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
 
 - **A log line promised that a car refused by the legacy gateway would be
   retried after twelve hours, which for many setups never happens (#584).**
-  Pointed out by @Mjukes, who read the line and reasonably expected a retry.
+  Found in a log @Mjukes posted while asking how to opt in: the line was in his
+  log, the observation was mine. The first published version of this entry said
+  he had pointed it out and "reasonably expected a retry", which he never said —
+  corrected here rather than quietly, since it put words in a reporter's mouth.
 
   The twelve hours are real — they are the cooldown on the denial — but the
-  same denial also records a durable "no legacy enrolment" verdict, and since a
+  same denial also records a "no legacy enrolment" verdict, held in memory for
+  as long as Home Assistant keeps the entry loaded, and since a
   change in early September the periodic check skips a car carrying that verdict
   outright when the entry reads through another channel. On such an entry the
   cooldown expiring changes nothing. On an entry whose primary channel *is* the
