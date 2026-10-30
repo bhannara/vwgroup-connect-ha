@@ -11,7 +11,8 @@ the values forward is optional, but a value with no capture time cannot be
 judged at all.
 
 The cause was the shape of the gap-fill. A sensor's freshness attributes are
-built from two side maps (see ``_eu_da_freshness_attributes`` in sensor.py):
+built from two side maps (see ``_eu_da_freshness_attributes``, which #1950 moved
+from sensor.py onto the shared entity base in entity_base.py):
 ``field_sources`` must name ``eu_data_act`` before any attribute is added, and
 then ``field_captured_ts`` supplies ``data_captured_at`` and turns
 ``freshness_source`` from "dataset" into "point". Those maps are themselves keys

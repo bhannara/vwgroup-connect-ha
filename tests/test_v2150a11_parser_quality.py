@@ -126,13 +126,18 @@ class TestDatasetCapturedAt:
         assert _walk_fields(payload).get("soc") == "80"
 
     def test_max_captured_time_wins(self) -> None:
-        payload = [
-            {"car_captured_time": "2026-06-22T08:00:00Z"},
-            {"car_captured_time": "2026-06-22T12:00:00Z"},
-        ]
-        ts = _dataset_captured_ts(payload)
-        later = _dataset_captured_ts([{"car_captured_time": "2026-06-22T08:00:00Z"}])
-        assert ts is not None and later is not None and ts > later
+        early = "2026-06-22T08:00:00Z"
+        late = "2026-06-22T12:00:00Z"
+        want = _dataset_captured_ts([{"car_captured_time": late}])
+        assert want is not None
+        # BOTH orders on purpose. Ascending input alone would also pass a
+        # "last one in the array wins" implementation, which is precisely the
+        # resolution bug #465 was about — so one order proves nothing here.
+        for payload in (
+            [{"car_captured_time": early}, {"car_captured_time": late}],
+            [{"car_captured_time": late}, {"car_captured_time": early}],
+        ):
+            assert _dataset_captured_ts(payload) == want
 
     def test_no_captured_time_is_none(self) -> None:
         assert _dataset_captured_ts({"soc": 80}) is None

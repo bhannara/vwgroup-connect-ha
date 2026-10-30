@@ -341,10 +341,25 @@ class VagConnectEntity(CoordinatorEntity[VagConnectCoordinator]):
         every other channel is a live read and the poll time is already the
         capture time. Adds ``data_captured_at`` (ISO, only when a genuine
         per-point timestamp survived onto this field), ``freshness_source``
-        ("point" when it did, else "dataset" for the ~15-min batch floor) and
-        ``ambiguous_reading`` (True only when the source shipped disagreeing
-        candidates under one capture time). Deliberately NO age_minutes or dataset
-        filename: both change every poll and would bloat the recorder.
+        ("point" when it did, else "dataset") and ``ambiguous_reading`` (True
+        only when the source shipped disagreeing candidates under one capture
+        time). Deliberately NO age_minutes or dataset filename: both change
+        every poll and would bloat the recorder.
+
+        What "dataset" actually says, because it is narrower than it sounds and
+        this comment claimed something else until now: it is the else-branch
+        below, so it means only that no per-point stamp was RECORDED for this
+        attribute. Recording is opt-in per call site in the mapper
+        (``record_as``), and few attributes ask for it — so a portal-fed value
+        reports "dataset" even when its own leaf did carry a genuine timestamp,
+        which is the case for the closure and lock sensors #1950 is about. It
+        is NOT a statement that the value inherited a dataset-level floor, and
+        it carries no age at all: no timestamp attribute is added on that
+        branch, so it implies no duration either. The portal's 15-minute figure
+        is its PUBLISH cadence, and even that holds only while the car keeps
+        having wake events (see ``_data_act_scraper``) — a parked car's export
+        repeats, and #1688 had the car's own capture field frozen five days
+        behind the data points beside it.
 
         #1950 (@Adcad1970) — this lived on ``VagConnectSensor`` until now, so
         only numeric sensors carried it. His point: the closure and lock binary

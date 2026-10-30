@@ -2127,7 +2127,10 @@ def map_dataset_to_vehicle_data(
         candidate lists, no drift if the alias order changes. ``field_ts`` holds
         ONLY genuine per-point timestamps (the dataset floor is filtered out in
         _walk_fields), so a recorded entry always means the sensor's freshness is
-        a real "point", never the ~15-min dataset floor. Ambiguity reuses the same
+        a real "point", never the floor that stampless fields inherit from
+        ``_dataset_captured_ts`` — which is the newest CAR-CAPTURED stamp in
+        the export, not a 15-minute age: #1688 had that field frozen five days
+        behind every data point in the same file. Ambiguity reuses the same
         ``contested`` map the freshness resolver already built: a genuine, non-mode
         -resolvable tie on the chosen leaf (or one of the call's aliases) is noted
         so the reading's uncertainty is visible per entity. Opt-in per call site

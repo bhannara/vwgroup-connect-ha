@@ -1984,9 +1984,13 @@ class VehicleData:
     # v4.7.11 (#465/#529/#1218 parity ADOPT) — per-VALUE freshness surfaced to
     # entities. Maps a VehicleData ATTRIBUTE name to the ISO-8601 UTC capture
     # time of the exact EU-DA source leaf the mapper resolved onto it (a GENUINE
-    # per-point timestamp, never the ~15-min dataset floor), so an EU-DA sensor
-    # can answer "when was THIS number actually measured" instead of only "when
-    # did we last poll". Only populated for EU-DA-sourced fields; the channel
+    # per-point timestamp, never the inherited dataset-level floor — that floor
+    # is the newest CAR-CAPTURED stamp in the export, which #1688 showed can be
+    # five days older than every data point beside it, so it is no age at all;
+    # 15 minutes is the portal's publish cadence and a different quantity), so
+    # an EU-DA sensor can answer "when was THIS number actually measured"
+    # instead of only "when did we last poll". Only populated for EU-DA-sourced
+    # fields; the channel
     # merge carries it from the owning source and drops it when a live channel
     # supersedes the EU-DA value. Never merged generically (see _channel_merge
     # ``_SKIP_FIELDS``).

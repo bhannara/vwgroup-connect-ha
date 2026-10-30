@@ -104,7 +104,9 @@ _LIVE_TELEMETRY = frozenset({
 #   - position (lat/lon/position_captured_at): governed by its own carry-forward
 #     TTL in vehicle_cache.reconcile, which already reasons about capture age.
 #   - fuel_level: has a dedicated endpoint-specific merge (BFF ← MBB VSR).
-#   - service_*/master data: effectively static; a 15-min batch age is irrelevant.
+#   - service_*/master data: effectively static, so the batch's capture age is
+#     irrelevant whatever it turns out to be (it is not bounded by the 15-minute
+#     publish cadence — see the 98 h-frozen case below).
 _LIVE_CLOSURE = frozenset({
     "doors_locked", "doors_open", "windows_open",
     "doors_individual", "windows_individual", "windows_position",
@@ -198,7 +200,8 @@ def merge_channels(
 
     # v4.7.8 (#923/#1378) — position: FRESHEST capture wins, not merge order.
     # The EU-DA batch feed can now carry a pin (``persLocation``), and with the
-    # portal as PRIMARY its 15-min-old pin would outrank a live vw.de fix via
+    # portal as PRIMARY its batch pin — hours or days old on a car that has not
+    # woken, not 15 minutes — would outrank a live vw.de fix via
     # plain gap-fill (position is deliberately outside the live-supersede set:
     # capture AGE, not channel class, is the right judge). Among every source
     # that has a pin AND a parseable capture time, take the newest; a source

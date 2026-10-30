@@ -198,6 +198,41 @@ Versioning: [Semantic Versioning 2.0.0](https://semver.org/)
   explanation was wrong. That wording had already travelled beyond the comment,
   which is the reason it is corrected here rather than quietly.
 
+- **Code comments described the dataset-level capture time as a "~15-min"
+  floor, which is not what it is (#1950).** It is the newest *car-captured*
+  stamp in an export, and that is no duration at all: #1688 is this repo's
+  standing case of a car whose own capture field sat five days behind every
+  data point beside it. The 15 minutes is the portal's publish cadence, and
+  even that holds only while the car keeps having wake events — a parked car's
+  export repeats the last one.
+
+  Nothing computed from it changed, and the parser's own docstring was always
+  right; the shorthand that distant places used to refer to it was not. The
+  same framing had spread to two further comments about merge order — a
+  position pin and the static service data — so five comments were corrected,
+  not three. It is corrected in public rather than quietly because the phrase
+  had already been published: the 4.4.0 note further down still says "the
+  portal's up-to-15-minute-old snapshot" about exactly these door and lock
+  states. Shipped release notes are left as they were said.
+
+  One finding worth passing on if you read the freshness attributes:
+  `freshness_source: "dataset"` does **not** mean the value inherited a floor.
+  It means only that no per-point capture time was *recorded* for that
+  attribute — recording is opt-in in the mapper and few attributes ask for it —
+  so a lock sensor can report "dataset" even though its own entry in the file
+  did carry a timestamp. Either way that attribute carries no age, so nothing
+  about it can be read as "roughly 15 minutes old".
+
+  A test now pins what the comments assert and refuses a comment that prices a
+  portal value at 15 minutes again. It also pins something that was found by
+  measuring rather than by reading: a capture marker standing in the same list
+  as a value **is** that value's capture time, which is how most exports are
+  shaped and is correct — only the payload-wide floor is withheld. Those two
+  routes look identical in a single-marker file, which is how the wrong
+  wording survived. One older test of the "newest wins" rule fed its input in
+  ascending order only, so a "last one in the array wins" implementation would
+  have passed it; it now feeds both orders.
+
 ## [5.1.3] - 2026-10-28 — No verdict without the evidence / Kein Urteil ohne Beleg
 
 ### Behoben / Fixed
