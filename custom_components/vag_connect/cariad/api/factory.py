@@ -9,6 +9,7 @@ from aiohttp import ClientSession
 from .base import CariadBaseClient
 from .vw_eu import VWEUClient
 from .audi import AudiClient
+from .audi_kr import AudiKRClient
 from .skoda import SkodaClient
 from .seat_cupra import SeatCupraClient
 from .porsche import PorscheClient
@@ -66,6 +67,8 @@ class CariadClientFactory:
             # realm, reads via the portal (state_brand VOLKSWAGEN_COMMERCIAL_VEHICLES).
             return VWCommercialClient(session, email, password, spin)
         if lower == "audi":
+            if country.lower() == "kr":
+                return AudiKRClient(session, email, password, spin)
             return AudiClient(session, email, password, spin)
         if lower == "skoda":
             return SkodaClient(session, email, password, spin)
