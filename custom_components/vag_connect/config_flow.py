@@ -3505,14 +3505,19 @@ class VagConnectConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: i
         # It is harmless downstream — the EU Data Act portal builds its OIDC
         # state from its own country/language defaults ("de__de__BRAND"), not
         # from CONF_COUNTRY — but it is misleading in diagnostics and a latent
-        # trap. So we only persist it for the NA brands; every other brand
-        # leaves it unset (the coordinator/factory already default to "us").
+        # trap. Persist it only where country affects the routing: both NA
+        # brands (US/CA) and Audi Korea (KR/APAC). Other EU brands leave it unset.
         #
         # #1433 — audi_na now ALSO routes on country: CA selects the EMEA CARIAD
         # BFF garage base (audi_na._market_bff_base), so a Canadian Audi whose
-        # country was dropped landed on the US garage and found 0 vehicles. Both
-        # NA brands therefore persist it.
-        if brand.lower() in ("volkswagen_na", "audi_na"):
+        # country was dropped landed on the US garage and found 0 vehicles.
+        if (
+            brand.lower() in ("volkswagen_na", "audi_na")
+            or (
+                brand.lower() == "audi"
+                and user_input.get(CONF_COUNTRY, "").lower() == "kr"
+            )
+        ):
             data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")
         return data
 

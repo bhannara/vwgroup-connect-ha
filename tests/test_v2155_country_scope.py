@@ -92,12 +92,13 @@ class TestEuPortalStateIgnoresNaCountry:
 
 
 class TestBuildEntryDataGatesCountry:
-    def test_country_only_stored_for_na_brands(self) -> None:
-        # #1433 — audi_na now routes on country too (CA -> the EMEA garage base),
-        # so the gate covers BOTH NA brands; EU brands still leave it unset, which
-        # is the pollution guard this test exists for.
+    def test_country_only_stored_for_na_brands_or_audi_kr(self) -> None:
+        # #1433 — audi_na retains US/CA selection; Audi KR routes to APAC.
+        # Other EU brands must not get a bogus country="us" entry.
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        assert 'if brand.lower() in ("volkswagen_na", "audi_na"):' in src
+        assert 'brand.lower() in ("volkswagen_na", "audi_na")' in src
+        assert 'brand.lower() == "audi"' in src
+        assert 'user_input.get(CONF_COUNTRY, "").lower() == "kr"' in src
         assert 'data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")' in src
 
     def test_country_not_stored_unconditionally(self) -> None:
@@ -106,15 +107,13 @@ class TestBuildEntryDataGatesCountry:
         assert 'CONF_COUNTRY:       user_input.get(CONF_COUNTRY, "us"),' not in src
 
     def test_build_entry_data_country_inside_brand_block(self) -> None:
-        """Structurally: the only CONF_COUNTRY write in _build_entry_data sits
-        under the NA-brand gate (defensive against an accidental un-gating
-        regression). #1433 widened the gate to both NA brands."""
+        """CONF_COUNTRY is persisted only under the NA or Audi KR market gate."""
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
         start = src.index("def _build_entry_data(")
         # The function ends at its sole ``return data`` statement.
         end = src.index("return data", start) + len("return data")
         body = src[start:end]
-        gate_idx = body.index('if brand.lower() in ("volkswagen_na", "audi_na"):')
+        gate_idx = body.index('brand.lower() in ("volkswagen_na", "audi_na")')
         write_idx = body.index("data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY")
         assert write_idx > gate_idx, "CONF_COUNTRY write is not under the gate"
 
