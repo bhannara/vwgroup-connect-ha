@@ -321,7 +321,7 @@ def _strategy_client(brand: str = "audi"):
     from custom_components.vag_connect.cariad.api.base import CariadBaseClient
 
     me = CariadBaseClient.__new__(CariadBaseClient)
-    me._brand = SimpleNamespace(name=brand)
+    me._brand = SimpleNamespace(name=brand, api_base="https://emea.bff.cariad.digital")
     me._email = "owner@example.com"
     me._password = "right-password"
     me._spin = ""
