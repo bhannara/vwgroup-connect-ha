@@ -180,10 +180,7 @@ BRAND_AUDI_KR = BrandConfig(
     name="audi",
     client_id="2d185de9-3b31-46b8-b9e2-9624281755d2@apps_vw-dilab_com",
     redirect_uri="myaudi:///",
-    user_agent=(
-        "Android/5.6.0 (Build 800344256.root project "
-        "'myaudi_android'.ext.buildTime) Android/13"
-    ),
+    user_agent=MYAUDI_USER_AGENT,
     api_base="https://ap.bff.cariad.digital",
     scope=(
         "address profile badge birthdate birthplace nationalIdentifier nationality "

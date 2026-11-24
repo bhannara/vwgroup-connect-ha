@@ -297,6 +297,7 @@ async def test_every_other_session_with_a_password_still_runs_its_strategies(
     password and any other session can retry as before."""
     me, sent = _client(password="pw", strategy=strategy)
     try:
+        me._brand.api_base = "https://emea.bff.cariad.digital"
         await me.authenticate()
     except DeviceLoginExpiredError:
         pytest.fail(f"a {strategy!r} session with a password must not be refused")

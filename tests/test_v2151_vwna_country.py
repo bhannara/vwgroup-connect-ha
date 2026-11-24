@@ -173,7 +173,16 @@ class TestValidateForwardsCountry:
 
     def test_email_password_reads_and_forwards_country(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        assert 'country  = user_input.get(CONF_COUNTRY, "us")' in src
+        # Audi KR now uses a UI-only brand alias, normalized before login.
+        start = src.index("async def async_step_email_password(")
+        end = src.index("async def async_step_website_authproxy(", start)
+        body = "".join(src[start:end].split())
+        assert (
+            '_normalize_brand_selection(selected_brand,user_input.get(CONF_COUNTRY,"us"))'
+            in body
+        )
+        assert "normalized_input[CONF_COUNTRY]=country" in body
+        assert "_validate_credentials(self.hass,brand,username,password,country=country)" in body
         # The email_password step calls _validate_credentials with country=.
         assert (
             "await _validate_credentials(\n"
@@ -194,15 +203,14 @@ class TestValidateForwardsCountry:
 
 
 class TestEntryDataStoresCountry:
-    """The persisted entry data dict carries the chosen country — but ONLY for
-    the NA brands (v2.15.5 scoping fix; #1433 widened it from volkswagen_na to
-    both NA brands, since audi_na also routes on country)."""
+    """Persist country for VW NA, Audi NA and Audi KR, but not other EU brands."""
 
-    def test_build_entry_data_stores_country_for_na_brands(self) -> None:
+    def test_build_entry_data_stores_country_for_na_brands_and_audi_kr(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        # Gated behind an NA-brand check so EU/other brands no longer get a bogus
-        # country="us" stamped into entry.data. #1433 — audi_na joined the gate.
-        assert 'if brand.lower() in ("volkswagen_na", "audi_na"):' in src
+        # Keep NA US/CA routing (#1433) and the Audi KR APAC market selection.
+        assert 'brand.lower() in ("volkswagen_na", "audi_na")' in src
+        assert 'brand.lower() == "audi"' in src
+        assert 'user_input.get(CONF_COUNTRY, "").lower() == "kr"' in src
         assert 'data[CONF_COUNTRY] = user_input.get(CONF_COUNTRY, "us")' in src
 
 
@@ -237,7 +245,12 @@ class TestReauthReconfigureThreadCountry:
 
     def test_reconfigure_schema_threads_country(self) -> None:
         src = _CONFIG_FLOW_PY.read_text(encoding="utf-8")
-        assert 'country=current.get(CONF_COUNTRY, "us")' in src
+        # Reconfigure binds the stored market before passing it to the schema.
+        start = src.index("async def async_step_reconfigure(")
+        end = src.index("def async_get_options_flow(", start)
+        body = "".join(src[start:end].split())
+        assert 'current_country=current.get(CONF_COUNTRY,"us")' in body
+        assert 'country=current_country' in body
 
 
 # ──────────────────────────────────────────────────────────────────────
